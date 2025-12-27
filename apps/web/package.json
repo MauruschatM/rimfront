@@ -11,8 +11,13 @@
   "dependencies": {
     "@base-ui/react": "^1.0.0",
     "@convex-dev/better-auth": "catalog:",
+    "@hookform/resolvers": "^5.2.2",
+    "@radix-ui/react-label": "^2.1.8",
+    "@radix-ui/react-slot": "^1.2.4",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.4.2",
+    "@rimfront/backend": "workspace:*",
+    "@rimfront/env": "workspace:*",
     "@tabler/icons-react": "^3.36.0",
     "@tanstack/react-form": "^1.27.3",
     "babel-plugin-react-compiler": "^1.0.0",
@@ -27,23 +32,22 @@
     "radix-ui": "^1.4.2",
     "react": "catalog:",
     "react-dom": "catalog:",
+    "react-hook-form": "^7.69.0",
     "shadcn": "^3.6.2",
     "sonner": "^2.0.5",
     "tailwind-merge": "^3.3.1",
     "three": "^0.182.0",
     "tw-animate-css": "^1.3.4",
-    "zod": "catalog:",
-    "@rimfront/env": "workspace:*",
-    "@rimfront/backend": "workspace:*"
+    "zod": "catalog:"
   },
   "devDependencies": {
+    "@rimfront/config": "workspace:*",
     "@tailwindcss/postcss": "^4.1.10",
     "@types/node": "^20",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
     "@types/three": "^0.182.0",
     "tailwindcss": "^4.1.10",
-    "typescript": "^5",
-    "@rimfront/config": "workspace:*"
+    "typescript": "^5"
   }
 }

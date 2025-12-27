@@ -7,7 +7,7 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
+  --font-sans: var(--font-press-start-2p), var(--font-sans);
   --font-mono: var(--font-geist-mono);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -48,7 +48,8 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
+  /* Star Wars/Space Theme Colors - Light Mode (Tatooine-ish?) */
+  --background: oklch(0.95 0.02 85);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
@@ -71,7 +72,7 @@
   --chart-3: oklch(0.546 0.245 262.881);
   --chart-4: oklch(0.488 0.243 264.376);
   --chart-5: oklch(0.424 0.199 265.638);
-  --radius: 0.625rem;
+  --radius: 0rem; /* Pixel art style implies sharp corners */
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
@@ -83,37 +84,38 @@
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
+  /* Star Wars/Space Theme Colors - Dark Mode (Deep Space) */
+  --background: oklch(0.10 0 0);
+  --foreground: oklch(0.985 0 0); /* Gold/Yellowish for text is classic Star Wars but white is better for readability */
+  --card: oklch(0.15 0 0);
   --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
+  --popover: oklch(0.15 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.87 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
+  --primary: oklch(0.85 0.15 85); /* Gold */
+  --primary-foreground: oklch(0.10 0 0);
+  --secondary: oklch(0.25 0 0);
   --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
+  --muted: oklch(0.25 0 0);
   --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.371 0 0);
+  --accent: oklch(0.25 0 0);
   --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  --destructive: oklch(0.6 0.25 25); /* Red lightsaber */
+  --border: oklch(0.3 0 0);
+  --input: oklch(0.2 0 0);
+  --ring: oklch(0.85 0.15 85); /* Gold ring */
   --chart-1: oklch(0.809 0.105 251.813);
   --chart-2: oklch(0.623 0.214 259.815);
   --chart-3: oklch(0.546 0.245 262.881);
   --chart-4: oklch(0.488 0.243 264.376);
   --chart-5: oklch(0.424 0.199 265.638);
-  --sidebar: oklch(0.205 0 0);
+  --sidebar: oklch(0.15 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-primary: oklch(0.85 0.15 85);
+  --sidebar-primary-foreground: oklch(0.10 0 0);
+  --sidebar-accent: oklch(0.25 0 0);
   --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --sidebar-border: oklch(0.3 0 0);
+  --sidebar-ring: oklch(0.85 0.15 85);
 }
 
 @layer base {
@@ -121,94 +123,46 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans;
   }
 }
 
-/* Steampunk theme enhancements */
 @layer components {
-  /* Steam particle animations for backgrounds */
-  .steam-particle {
+  /* Star Field Background */
+  .stars {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -1;
+    background: #000;
+  }
+
+  .star {
     position: absolute;
-    width: 100px;
-    height: 100px;
-    background: radial-gradient(
-      circle,
-      rgba(183, 110, 51, 0.3) 0%,
-      transparent 70%
+    width: 2px;
+    height: 2px;
+    background: #fff;
+    opacity: 0.8;
+  }
+
+  /* Pixel Art Utilities */
+  .pixel-corners {
+    clip-path: polygon(
+      0px 4px, 4px 4px, 4px 0px,
+      calc(100% - 4px) 0px, calc(100% - 4px) 4px, 100% 4px,
+      100% calc(100% - 4px), calc(100% - 4px) calc(100% - 4px), calc(100% - 4px) 100%,
+      4px 100%, 4px calc(100% - 4px), 0px calc(100% - 4px)
     );
-    border-radius: 50%;
-    animation: steam-rise 8s ease-in-out infinite;
   }
 
-  .steam-particle-1 {
-    left: 10%;
-    animation-delay: 0s;
-  }
-
-  .steam-particle-2 {
-    left: 50%;
-    animation-delay: 2.5s;
-  }
-
-  .steam-particle-3 {
-    left: 80%;
-    animation-delay: 5s;
-  }
-
-  @keyframes steam-rise {
-    0% {
-      transform: translateY(100vh) scale(0.5);
-      opacity: 0;
-    }
-    50% {
-      opacity: 0.5;
-    }
-    100% {
-      transform: translateY(-100px) scale(1.5);
-      opacity: 0;
-    }
-  }
-
-  /* Industrial button style */
-  .btn-industrial {
-    position: relative;
-    background: linear-gradient(180deg, #b87333 0%, #8b5a2b 100%);
-    border: 2px solid #4a3728;
+  .pixel-border {
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.2),
-      0 4px 0 #4a3728,
-      0 6px 8px rgba(0, 0, 0, 0.3);
-  }
-
-  .btn-industrial:active {
-    transform: translateY(2px);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.2),
-      0 2px 0 #4a3728,
-      0 3px 4px rgba(0, 0, 0, 0.3);
-  }
-
-  /* Gear decoration (for future use) */
-  .gear {
-    animation: gear-rotate 10s linear infinite;
-  }
-
-  @keyframes gear-rotate {
-    from {
-      transform: rotate(0deg);
-    }
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
-  /* Metal panel style */
-  .panel-metal {
-    background: linear-gradient(135deg, #3a3a4a 0%, #2a2a3a 50%, #3a3a4a 100%);
-    border: 1px solid #5a5a6a;
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.1),
-      0 2px 4px rgba(0, 0, 0, 0.3);
+      -4px 0 0 0 var(--border),
+      4px 0 0 0 var(--border),
+      0 -4px 0 0 var(--border),
+      0 4px 0 0 var(--border);
+    margin: 4px;
   }
 }

@@ -1,6 +1,20 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
+const memberObject = v.object({
+  id: v.string(),
+  ownerId: v.id("players"),
+  state: v.string(), // "idle", "moving", "working", "sleeping", "patrol"
+  x: v.number(),
+  y: v.number(),
+  path: v.optional(v.array(v.object({ x: v.number(), y: v.number() }))),
+  pathIndex: v.optional(v.number()),
+  stateEnd: v.optional(v.number()), // For sleeping/working/patrol duration
+  // Family specific
+  homeId: v.optional(v.string()),
+  workplaceId: v.optional(v.string()),
+});
+
 export default defineSchema({
   games: defineTable({
     status: v.string(), // "waiting", "active", "ended"
@@ -35,22 +49,22 @@ export default defineSchema({
     buildings: v.array(v.any()), // JSON object for player buildings
     planetType: v.string(),
   }).index("by_gameId", ["gameId"]),
-  resident_chunks: defineTable({
+  unit_chunks: defineTable({
     gameId: v.id("games"),
     chunkIndex: v.number(),
-    residents: v.array(
-      v.object({
-        id: v.string(),
-        ownerId: v.id("players"),
-        homeId: v.string(), // ID of the house
-        workplaceId: v.optional(v.string()), // ID of the workshop
-        state: v.string(), // "idle", "commute_work", "working", "commute_home", "sleeping"
-        x: v.number(),
-        y: v.number(),
-        path: v.optional(v.array(v.object({ x: v.number(), y: v.number() }))),
-        pathIndex: v.optional(v.number()),
-        stateEnd: v.optional(v.number()), // For sleeping/working duration
-      })
-    ),
+    families: v.array(v.object({
+      id: v.string(),
+      homeId: v.string(),
+      members: v.array(memberObject)
+    })),
+    troops: v.array(v.object({
+      id: v.string(),
+      barracksId: v.string(),
+      commander: memberObject,
+      soldiers: v.array(memberObject),
+      targetPos: v.optional(v.object({ x: v.number(), y: v.number() })),
+      lastSpawnTime: v.optional(v.number()),
+      state: v.string(), // "idle", "moving" (Troop level state)
+    })),
   }).index("by_gameId", ["gameId"]),
 });

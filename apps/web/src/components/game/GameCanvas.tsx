@@ -15,7 +15,18 @@ interface GameCanvasProps {
   staticMap: any;
   buildings: any[];
   players: any[];
-  residentChunks?: any[];
+  unitChunks?: any[];
+}
+
+interface ExtendedGameCanvasProps extends GameCanvasProps {
+    isBuildMode?: boolean;
+    selectedBuilding?: string | null;
+    onPlaceBuilding?: (type: string, x: number, y: number) => void;
+
+    // Troop Selection
+    selectedTroopId?: string | null;
+    onSelectTroop?: (troopId: string | null) => void;
+    onMoveTroop?: (x: number, y: number) => void;
 }
 
 const TILE_SIZE = 1;
@@ -54,7 +65,6 @@ const MapRenderer = React.memo(function MapRenderer({ map }: { map: any }) {
 
   React.useEffect(() => {
       if (!meshRef.current) return;
-      // console.log("Rendering Map Tiles...");
 
       const tempObj = new THREE.Object3D();
       const color = new THREE.Color();
@@ -117,30 +127,34 @@ function StructuresRenderer({ map }: { map: any }) {
     )
 }
 
-function BuildingsRenderer({ buildings, residentChunks }: { buildings: any[], residentChunks?: any[] }) {
+function BuildingsRenderer({ buildings, unitChunks }: { buildings: any[], unitChunks?: any[] }) {
 
     // Count workshop occupancy
     const workshopOccupancy = React.useMemo(() => {
         const counts: Record<string, number> = {};
-        if (residentChunks) {
-            for (const chunk of residentChunks) {
-                for (const r of chunk.residents) {
-                    if (r.state === "working" && r.workplaceId) {
-                        counts[r.workplaceId] = (counts[r.workplaceId] || 0) + 1;
+        if (unitChunks) {
+            for (const chunk of unitChunks) {
+                // Check families
+                if (chunk.families) {
+                    for (const f of chunk.families) {
+                        for (const r of f.members) {
+                            if (r.state === "working" && r.workplaceId) {
+                                counts[r.workplaceId] = (counts[r.workplaceId] || 0) + 1;
+                            }
+                        }
                     }
                 }
             }
         }
         return counts;
-    }, [residentChunks]);
+    }, [unitChunks]);
 
     return (
         <group>
             {buildings.map((b: any, i: number) => {
                 const isUnderConstruction = b.constructionEnd && b.constructionEnd > Date.now();
                 const occupancy = workshopOccupancy[b.id] || 0;
-                const isLowStaff = b.type === "workshop" && occupancy < 1; // "Not enough" -> less than 1 or full? User said exclaim if not enough. Assuming < 1 for now or < Max.
-                // A workshop needs workers. Empty is bad.
+                const isLowStaff = b.type === "workshop" && occupancy < 1;
 
                 return (
                     <group key={i}>
@@ -177,82 +191,207 @@ function BuildingsRenderer({ buildings, residentChunks }: { buildings: any[], re
     )
 }
 
-function ResidentsRenderer({ residentChunks }: { residentChunks: any[] }) {
-    const meshRef = React.useRef<THREE.InstancedMesh>(null);
-    const count = React.useMemo(() => residentChunks.reduce((acc, c) => acc + c.residents.length, 0), [residentChunks]);
+function UnitsRenderer({ unitChunks, selectedTroopId, onSelectTroop }: { unitChunks: any[], selectedTroopId?: string | null, onSelectTroop?: (id: string | null) => void }) {
 
-    // Flatten
-    const residents = React.useMemo(() => {
-        return residentChunks.flatMap(c => c.residents);
-    }, [residentChunks]);
+    // Group all units for rendering
+    // We will use 3 distinct meshes: Families (Sphere), Commanders (Box), Soldiers (Smaller Box)
+    const familiesRef = React.useRef<THREE.InstancedMesh>(null);
+    const commandersRef = React.useRef<THREE.InstancedMesh>(null);
+    const soldiersRef = React.useRef<THREE.InstancedMesh>(null);
 
-    // OPTIMIZATION: Use useEffect instead of useFrame to update instances only when data changes.
-    // Since we are snapping to tiles (server authoritative) and not interpolating client-side,
-    // we do not need 60FPS updates. This saves massive CPU for 10,000 units.
+    const { families, commanders, soldiers } = React.useMemo(() => {
+        const families: any[] = [];
+        const commanders: any[] = [];
+        const soldiers: any[] = [];
+
+        for (const chunk of unitChunks) {
+            // Families
+            if (chunk.families) {
+                for (const f of chunk.families) {
+                    families.push(...f.members);
+                }
+            }
+            // Troops
+            if (chunk.troops) {
+                for (const t of chunk.troops) {
+                    // Attach troop ID to member for selection
+                    const cmd = { ...t.commander, troopId: t.id, type: 'commander' };
+                    commanders.push(cmd);
+
+                    for (const s of t.soldiers) {
+                        soldiers.push({ ...s, troopId: t.id, type: 'soldier' });
+                    }
+                }
+            }
+        }
+        return { families, commanders, soldiers };
+    }, [unitChunks]);
+
+    // Handle Clicks
+    // Since we use InstancedMesh, we can't attach onClick easily to individual instances without raycasting logic.
+    // But `onClick` on InstancedMesh returns instanceId.
+
+    const handleUnitClick = (e: any, list: any[]) => {
+        if (!onSelectTroop) return;
+        e.stopPropagation();
+        const instanceId = e.instanceId;
+        if (instanceId !== undefined && list[instanceId]) {
+             const unit = list[instanceId];
+             if (unit.troopId) {
+                 onSelectTroop(unit.troopId);
+             }
+        }
+    };
+
+    // Update Families
     React.useEffect(() => {
-        if (!meshRef.current) return;
+        if (!familiesRef.current) return;
         const tempObj = new THREE.Object3D();
         const color = new THREE.Color();
 
-        residents.forEach((r, i) => {
+        families.forEach((r, i) => {
             tempObj.position.set(r.x, r.y, 0.5);
             tempObj.scale.set(0.5, 0.5, 0.5);
             tempObj.updateMatrix();
-            meshRef.current!.setMatrixAt(i, tempObj.matrix);
+            familiesRef.current!.setMatrixAt(i, tempObj.matrix);
 
             if (r.state === "working") color.set("lime");
             else if (r.state === "sleeping") color.set("blue");
-            else if (r.state === "commute_work") color.set("yellow");
-            else if (r.state === "commute_home") color.set("orange");
-            else color.set("white"); // idle
+            else color.set("white");
 
-            meshRef.current!.setColorAt(i, color);
+            familiesRef.current!.setColorAt(i, color);
         });
+        familiesRef.current.instanceMatrix.needsUpdate = true;
+        if (familiesRef.current.instanceColor) familiesRef.current.instanceColor.needsUpdate = true;
+    }, [families]);
 
-        meshRef.current.instanceMatrix.needsUpdate = true;
-        if (meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
-    }, [residents]); // Depend on flattened residents array
+    // Update Commanders
+    React.useEffect(() => {
+        if (!commandersRef.current) return;
+        const tempObj = new THREE.Object3D();
+        const color = new THREE.Color();
 
-    if (count === 0) return null;
+        commanders.forEach((c, i) => {
+            tempObj.position.set(c.x, c.y, 1); // Taller
+            tempObj.scale.set(0.8, 0.8, 0.8);
+            tempObj.updateMatrix();
+            commandersRef.current!.setMatrixAt(i, tempObj.matrix);
+
+            // Highlight selected
+            if (selectedTroopId && c.troopId === selectedTroopId) {
+                color.set("yellow");
+            } else {
+                color.set("red");
+            }
+
+            commandersRef.current!.setColorAt(i, color);
+        });
+        commandersRef.current.instanceMatrix.needsUpdate = true;
+        if (commandersRef.current.instanceColor) commandersRef.current.instanceColor.needsUpdate = true;
+    }, [commanders, selectedTroopId]);
+
+    // Update Soldiers
+    React.useEffect(() => {
+        if (!soldiersRef.current) return;
+        const tempObj = new THREE.Object3D();
+        const color = new THREE.Color();
+
+        soldiers.forEach((s, i) => {
+            tempObj.position.set(s.x, s.y, 0.5);
+            tempObj.scale.set(0.4, 0.4, 0.4);
+            tempObj.updateMatrix();
+            soldiersRef.current!.setMatrixAt(i, tempObj.matrix);
+
+            if (selectedTroopId && s.troopId === selectedTroopId) {
+                color.set("orange"); // Selected troop soldiers
+            } else {
+                color.set("maroon");
+            }
+
+            soldiersRef.current!.setColorAt(i, color);
+        });
+        soldiersRef.current.instanceMatrix.needsUpdate = true;
+        if (soldiersRef.current.instanceColor) soldiersRef.current.instanceColor.needsUpdate = true;
+    }, [soldiers, selectedTroopId]);
 
     return (
-        <instancedMesh ref={meshRef} args={[undefined, undefined, count]}>
-            <sphereGeometry args={[0.4, 8, 8]} />
-            <meshBasicMaterial />
-        </instancedMesh>
+        <group>
+            {/* Families */}
+            {families.length > 0 && (
+                <instancedMesh ref={familiesRef} args={[undefined, undefined, families.length]}>
+                    <sphereGeometry args={[0.4, 8, 8]} />
+                    <meshBasicMaterial />
+                </instancedMesh>
+            )}
+            {/* Commanders */}
+            {commanders.length > 0 && (
+                <instancedMesh
+                    ref={commandersRef}
+                    args={[undefined, undefined, commanders.length]}
+                    onClick={(e) => handleUnitClick(e, commanders)}
+                    onPointerOver={() => document.body.style.cursor = 'pointer'}
+                    onPointerOut={() => document.body.style.cursor = 'default'}
+                >
+                    <boxGeometry args={[1, 1, 2]} />
+                    <meshStandardMaterial />
+                </instancedMesh>
+            )}
+            {/* Soldiers */}
+            {soldiers.length > 0 && (
+                <instancedMesh
+                    ref={soldiersRef}
+                    args={[undefined, undefined, soldiers.length]}
+                    onClick={(e) => handleUnitClick(e, soldiers)}
+                >
+                    <boxGeometry args={[0.8, 0.8, 1]} />
+                    <meshStandardMaterial />
+                </instancedMesh>
+            )}
+        </group>
     );
 }
 
-
-function PlacementManager({
+function InteractionPlane({
     game,
     width,
     height,
-    onPlace,
+    onClick,
     isBuildMode,
-    selectedBuilding
+    selectedBuilding,
+    selectedTroopId,
+    onMoveTroop
 }: {
     game: any,
     width: number,
     height: number,
-    onPlace: (x: number, y: number) => void,
+    onClick: (x: number, y: number) => void,
     isBuildMode?: boolean,
-    selectedBuilding?: string | null
+    selectedBuilding?: string | null,
+    selectedTroopId?: string | null,
+    onMoveTroop?: (x: number, y: number) => void
 }) {
-    const { camera, raycaster, scene } = useThree();
+    const { camera, raycaster } = useThree();
     const [hoverPos, setHoverPos] = React.useState<{x: number, y: number} | null>(null);
     const planeRef = React.useRef<THREE.Mesh>(null);
 
+    // Find the troop target for visualization
+    const troopTarget = React.useMemo(() => {
+        if (!selectedTroopId || !game) return null;
+        // In a real app we would pass residentChunks to this component to find the target.
+        // For now, let's skip complex target viz here or pass it down if needed.
+        return null;
+    }, [selectedTroopId, game]);
+
     useFrame((state) => {
-        // Active if in placement phase OR in build mode during simulation
-        const isActive = game.phase === "placement" || (game.phase === "simulation" && isBuildMode);
+        // Active logic: Build Mode OR Defense Mode (selectedTroopId)
+        const isDefenseMode = !!selectedTroopId;
+        const isActive = game.phase === "placement" || (game.phase === "simulation" && (isBuildMode || isDefenseMode));
 
         if (!isActive) {
              if (hoverPos) setHoverPos(null);
              return;
         }
 
-        // Raycast against infinite plane at Z=0
         raycaster.setFromCamera(state.pointer, camera);
 
         if (planeRef.current) {
@@ -266,32 +405,38 @@ function PlacementManager({
         }
     });
 
-    const handleClick = () => {
+    const handleClick = (e: any) => {
+        e.stopPropagation();
         if (hoverPos) {
-            if (game.phase === "placement") {
-                onPlace(hoverPos.x, hoverPos.y);
-            } else if (game.phase === "simulation" && isBuildMode) {
-                onPlace(hoverPos.x, hoverPos.y);
+            // Priority: Troop Move > Build > Base Place
+            if (selectedTroopId && onMoveTroop) {
+                onMoveTroop(hoverPos.x, hoverPos.y);
+            } else {
+                onClick(hoverPos.x, hoverPos.y);
             }
         }
     }
 
-    // Determine cursor size
+    // Cursor Visuals
+    let cursorColor = "white";
     let cursorWidth = 1;
     let cursorHeight = 1;
 
     if (game.phase === "placement") {
         cursorWidth = 5;
         cursorHeight = 5;
-    } else if (selectedBuilding) {
+        cursorColor = "lime";
+    } else if (isBuildMode && selectedBuilding) {
+        cursorColor = "cyan";
         switch(selectedBuilding) {
             case "house": cursorWidth = 2; cursorHeight = 2; break;
             case "workshop": cursorWidth = 4; cursorHeight = 4; break;
             case "barracks": cursorWidth = 3; cursorHeight = 3; break;
         }
+    } else if (selectedTroopId) {
+        cursorColor = "red"; // Target reticle
     }
 
-    // Invisible plane for raycasting
     return (
         <group>
              <mesh ref={planeRef} position={[width/2, height/2, 0]} onClick={handleClick} visible={false}>
@@ -300,35 +445,19 @@ function PlacementManager({
 
              {/* Cursor */}
              {hoverPos && (
-                 <mesh position={[hoverPos.x + cursorWidth/2 - 0.5, hoverPos.y + cursorHeight/2 - 0.5, 1]}>
+                 <mesh position={[hoverPos.x + cursorWidth/2 - 0.5, hoverPos.y + cursorHeight/2 - 0.5, 0.1]}>
                      <boxGeometry args={[cursorWidth, cursorHeight, 0.5]} />
-                     <meshBasicMaterial color={isBuildMode ? "cyan" : "lime"} transparent opacity={0.5} wireframe />
+                     <meshBasicMaterial color={cursorColor} transparent opacity={0.5} wireframe />
                  </mesh>
              )}
+
+             {/* Target Marker (Click feedback could be added here) */}
         </group>
     )
 }
 
-// Helper for texture gen (client side only)
-function generateTileCanvas(color: string) {
-    const canvas = document.createElement('canvas');
-    canvas.width = 16;
-    canvas.height = 16;
-    const ctx = canvas.getContext('2d')!;
-    ctx.fillStyle = color;
-    ctx.fillRect(0,0,16,16);
-    return canvas;
-}
-
-interface ExtendedGameCanvasProps extends GameCanvasProps {
-    isBuildMode?: boolean;
-    selectedBuilding?: string | null;
-    onPlaceBuilding?: (type: string, x: number, y: number) => void;
-}
-
-export function GameCanvas({ game, staticMap, buildings, players, residentChunks, isBuildMode, selectedBuilding, onPlaceBuilding }: ExtendedGameCanvasProps) {
+export function GameCanvas({ game, staticMap, buildings, players, unitChunks, isBuildMode, selectedBuilding, onPlaceBuilding, selectedTroopId, onSelectTroop, onMoveTroop }: ExtendedGameCanvasProps) {
   const { data: session } = authClient.useSession();
-
   const placeBase = useMutation(api.game.placeBase);
 
   const handlePlace = async (x: number, y: number) => {
@@ -366,22 +495,30 @@ export function GameCanvas({ game, staticMap, buildings, players, residentChunks
         zoomSpeed={0.5}
         minZoom={10}
         maxZoom={50}
-        // Restrict bounds roughly
         target={[staticMap.width/2, staticMap.height/2, 0]}
       />
 
       <MapRenderer map={staticMap} />
       <StructuresRenderer map={staticMap} />
-      <BuildingsRenderer buildings={buildings} residentChunks={residentChunks} players={players} />
-      {residentChunks && <ResidentsRenderer residentChunks={residentChunks} />}
+      <BuildingsRenderer buildings={buildings} unitChunks={unitChunks} />
 
-      <PlacementManager
+      {unitChunks && (
+          <UnitsRenderer
+            unitChunks={unitChunks}
+            selectedTroopId={selectedTroopId}
+            onSelectTroop={onSelectTroop}
+          />
+      )}
+
+      <InteractionPlane
         game={game}
         width={staticMap.width}
         height={staticMap.height}
-        onPlace={handlePlace}
+        onClick={handlePlace}
         isBuildMode={isBuildMode}
         selectedBuilding={selectedBuilding}
+        selectedTroopId={selectedTroopId}
+        onMoveTroop={onMoveTroop}
       />
 
     </Canvas>

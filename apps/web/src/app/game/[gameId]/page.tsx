@@ -23,7 +23,7 @@ export default function GamePage() {
   const gameId = params.gameId as Id<"games">;
   const { data: session } = authClient.useSession();
 
-  // Poll game state (Dynamic: buildings, players, phase)
+  // Poll game state (Dynamic: buildings, players, phase, residents)
   const gameState = useQuery(api.game.getGameState, { gameId });
 
   // Load Static Map (Tiles, Structures) - Only loads once ideally or when null
@@ -48,11 +48,9 @@ export default function GamePage() {
               x,
               y
           });
-          // Optional: Exit build mode after placement? Or keep it open for multiple placements?
-          // Keeping it open for now as usually expected in RTS.
       } catch (e: any) {
           console.error("Failed to place building:", e);
-          alert(e.message); // Simple feedback for now
+          alert(e.message);
       }
   };
 
@@ -73,32 +71,7 @@ export default function GamePage() {
       );
   }
 
-  const { game, players, buildings } = gameState;
-
-  // Find my player (simple approach: we don't have user ID in context easily here without Auth helper,
-  // but we can try to match by logic or just show all/first for now if Auth is complex to wire up here.
-  // Actually, we can use useConvexAuth if we want to be precise, or just rely on the fact that
-  // in a real app we'd filter. For this prototype, I'll grab the first non-bot player or try to find one.)
-  // Wait, I can get identity via useQuery if I made a separate query, but let's see if we can just
-  // assume the user knows who they are.
-  // BETTER: Fetch the user identity or just display credits if available.
-  // Since I can't easily get my own ID without `useAuth` which might not be exported from convex/react standard,
-  // I will check if I can match by checking `game.ts` `getGameState`.
-  // `getGameState` returns all players.
-  // Let's iterate and find the one that might be "me".
-  // Since this is a prototype/MVP, I will just sum up credits or display them if I could identify.
-  // BUT, `convex/react` usually provides `useConvexAuth`.
-
-  // Let's assume for now we display credits for the *local* player if we can find them.
-  // Ideally we need the userId.
-  // I'll add `useConvexAuth` to check identity.
-
-  // Re-evaluating: I don't want to break imports.
-  // I'll try to find a player that matches a stored ID or just pick the first human player for the UI demo
-  // if exact identity matching is tricky without more context.
-  // However, `packages/backend/convex/game.ts` uses `ctx.auth.getUserIdentity()`.
-  // Let's just grab the first player that matches "me" if I could.
-  // For now, I will display the credits of the first human player found, or 0.
+  const { game, players, buildings, residentChunks } = gameState;
 
   // Try to match by user ID if session is available, otherwise fallback
   const myPlayer = players.find(p => session?.user?.id && p.userId === session.user.id) || players.find(p => !p.isBot) || players[0];
@@ -140,6 +113,7 @@ export default function GamePage() {
         staticMap={staticMap}
         buildings={buildings}
         players={players}
+        residentChunks={residentChunks}
         isBuildMode={isBuildMode}
         selectedBuilding={selectedBuilding}
         onPlaceBuilding={handlePlaceBuilding}

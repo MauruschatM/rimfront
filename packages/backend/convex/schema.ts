@@ -35,4 +35,22 @@ export default defineSchema({
     buildings: v.array(v.any()), // JSON object for player buildings
     planetType: v.string(),
   }).index("by_gameId", ["gameId"]),
+  resident_chunks: defineTable({
+    gameId: v.id("games"),
+    chunkIndex: v.number(),
+    residents: v.array(
+      v.object({
+        id: v.string(),
+        ownerId: v.id("players"),
+        homeId: v.string(), // ID of the house
+        workplaceId: v.optional(v.string()), // ID of the workshop
+        state: v.string(), // "idle", "commute_work", "working", "commute_home", "sleeping"
+        x: v.number(),
+        y: v.number(),
+        path: v.optional(v.array(v.object({ x: v.number(), y: v.number() }))),
+        pathIndex: v.optional(v.number()),
+        stateEnd: v.optional(v.number()), // For sleeping/working duration
+      })
+    ),
+  }).index("by_gameId", ["gameId"]),
 });

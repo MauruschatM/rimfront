@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { Canvas, useThree, useFrame } from "@react-three/fiber";
-import { OrthographicCamera, MapControls } from "@react-three/drei";
+import { OrthographicCamera, MapControls, Text } from "@react-three/drei";
 import * as THREE from "three";
 import { createPlanetPalette, generateTileTexture } from "@/lib/assets";
 import { useMutation } from "convex/react";
@@ -15,6 +15,7 @@ interface GameCanvasProps {
   staticMap: any;
   buildings: any[];
   players: any[];
+  residentChunks?: any[];
 }
 
 const TILE_SIZE = 1;
@@ -53,7 +54,7 @@ const MapRenderer = React.memo(function MapRenderer({ map }: { map: any }) {
 
   React.useEffect(() => {
       if (!meshRef.current) return;
-      console.log("Rendering Map Tiles..."); // Debug log to ensure it runs once
+      // console.log("Rendering Map Tiles...");
 
       const tempObj = new THREE.Object3D();
       const color = new THREE.Color();
@@ -90,7 +91,7 @@ const MapRenderer = React.memo(function MapRenderer({ map }: { map: any }) {
       }
       meshRef.current.instanceMatrix.needsUpdate = true;
       if (meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
-  }, [width, height, tiles, palette]); // Only re-run if map geometry changes
+  }, [width, height, tiles, palette]);
 
   return (
     <instancedMesh ref={meshRef} args={[undefined, undefined, width * height]}>
@@ -116,11 +117,30 @@ function StructuresRenderer({ map }: { map: any }) {
     )
 }
 
-function BuildingsRenderer({ buildings, players }: { buildings: any[], players: any[] }) {
+function BuildingsRenderer({ buildings, residentChunks }: { buildings: any[], residentChunks?: any[] }) {
+
+    // Count workshop occupancy
+    const workshopOccupancy = React.useMemo(() => {
+        const counts: Record<string, number> = {};
+        if (residentChunks) {
+            for (const chunk of residentChunks) {
+                for (const r of chunk.residents) {
+                    if (r.state === "working" && r.workplaceId) {
+                        counts[r.workplaceId] = (counts[r.workplaceId] || 0) + 1;
+                    }
+                }
+            }
+        }
+        return counts;
+    }, [residentChunks]);
+
     return (
         <group>
             {buildings.map((b: any, i: number) => {
                 const isUnderConstruction = b.constructionEnd && b.constructionEnd > Date.now();
+                const occupancy = workshopOccupancy[b.id] || 0;
+                const isLowStaff = b.type === "workshop" && occupancy < 1; // "Not enough" -> less than 1 or full? User said exclaim if not enough. Assuming < 1 for now or < Max.
+                // A workshop needs workers. Empty is bad.
 
                 return (
                     <group key={i}>
@@ -138,12 +158,71 @@ function BuildingsRenderer({ buildings, players }: { buildings: any[], players: 
                                 <meshBasicMaterial color="yellow" transparent opacity={0.5} />
                             </mesh>
                         )}
+                        {/* Status for Low Staff */}
+                        {isLowStaff && !isUnderConstruction && (
+                             <Text
+                                position={[b.x + b.width/2 - 0.5, b.y + b.height + 1, 2]}
+                                fontSize={2}
+                                color="red"
+                                anchorX="center"
+                                anchorY="middle"
+                             >
+                                 !
+                             </Text>
+                        )}
                     </group>
                 );
             })}
         </group>
     )
 }
+
+function ResidentsRenderer({ residentChunks }: { residentChunks: any[] }) {
+    const meshRef = React.useRef<THREE.InstancedMesh>(null);
+    const count = React.useMemo(() => residentChunks.reduce((acc, c) => acc + c.residents.length, 0), [residentChunks]);
+
+    // Flatten
+    const residents = React.useMemo(() => {
+        return residentChunks.flatMap(c => c.residents);
+    }, [residentChunks]);
+
+    // OPTIMIZATION: Use useEffect instead of useFrame to update instances only when data changes.
+    // Since we are snapping to tiles (server authoritative) and not interpolating client-side,
+    // we do not need 60FPS updates. This saves massive CPU for 10,000 units.
+    React.useEffect(() => {
+        if (!meshRef.current) return;
+        const tempObj = new THREE.Object3D();
+        const color = new THREE.Color();
+
+        residents.forEach((r, i) => {
+            tempObj.position.set(r.x, r.y, 0.5);
+            tempObj.scale.set(0.5, 0.5, 0.5);
+            tempObj.updateMatrix();
+            meshRef.current!.setMatrixAt(i, tempObj.matrix);
+
+            if (r.state === "working") color.set("lime");
+            else if (r.state === "sleeping") color.set("blue");
+            else if (r.state === "commute_work") color.set("yellow");
+            else if (r.state === "commute_home") color.set("orange");
+            else color.set("white"); // idle
+
+            meshRef.current!.setColorAt(i, color);
+        });
+
+        meshRef.current.instanceMatrix.needsUpdate = true;
+        if (meshRef.current.instanceColor) meshRef.current.instanceColor.needsUpdate = true;
+    }, [residents]); // Depend on flattened residents array
+
+    if (count === 0) return null;
+
+    return (
+        <instancedMesh ref={meshRef} args={[undefined, undefined, count]}>
+            <sphereGeometry args={[0.4, 8, 8]} />
+            <meshBasicMaterial />
+        </instancedMesh>
+    );
+}
+
 
 function PlacementManager({
     game,
@@ -247,7 +326,7 @@ interface ExtendedGameCanvasProps extends GameCanvasProps {
     onPlaceBuilding?: (type: string, x: number, y: number) => void;
 }
 
-export function GameCanvas({ game, staticMap, buildings, players, isBuildMode, selectedBuilding, onPlaceBuilding }: ExtendedGameCanvasProps) {
+export function GameCanvas({ game, staticMap, buildings, players, residentChunks, isBuildMode, selectedBuilding, onPlaceBuilding }: ExtendedGameCanvasProps) {
   const { data: session } = authClient.useSession();
 
   const placeBase = useMutation(api.game.placeBase);
@@ -293,7 +372,8 @@ export function GameCanvas({ game, staticMap, buildings, players, isBuildMode, s
 
       <MapRenderer map={staticMap} />
       <StructuresRenderer map={staticMap} />
-      <BuildingsRenderer buildings={buildings} players={players} />
+      <BuildingsRenderer buildings={buildings} residentChunks={residentChunks} players={players} />
+      {residentChunks && <ResidentsRenderer residentChunks={residentChunks} />}
 
       <PlacementManager
         game={game}

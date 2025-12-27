@@ -1,8 +1,6 @@
 import { convexBetterAuthNextJs } from "@convex-dev/better-auth/nextjs";
 import { env } from "@rimfront/env/web";
 
-import { isAuthError } from "@/lib/utils";
-
 export const {
   handler,
   preloadAuthQuery,

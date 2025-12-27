@@ -13,7 +13,7 @@ export default function Providers({
   initialToken,
 }: {
   children: React.ReactNode;
-  initialToken: string;
+  initialToken?: string;
 }) {
   return (
     <ThemeProvider

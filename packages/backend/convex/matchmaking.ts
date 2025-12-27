@@ -85,6 +85,7 @@ export const findOrCreateLobby = mutation({
       isBot: false,
       name: args.playerName,
       teamId: teamId,
+      credits: 0,
     });
 
     // Schedule game check
@@ -146,7 +147,8 @@ export const checkGameStart = mutation({
                                  userId: undefined,
                                  isBot: true,
                                  name: `Bot-${Math.floor(Math.random() * 1000)}`,
-                                 teamId: botTeam
+                                 teamId: botTeam,
+                                 credits: 0,
                              });
                         }
                      }
@@ -158,7 +160,8 @@ export const checkGameStart = mutation({
                             userId: undefined,
                             isBot: true,
                             name: `Bot-${Math.floor(Math.random() * 1000)}`,
-                            teamId: undefined
+                            teamId: undefined,
+                            credits: 0,
                         });
                     }
                 }

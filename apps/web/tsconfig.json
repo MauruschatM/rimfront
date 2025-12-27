@@ -26,6 +26,9 @@
     "paths": {
       "@/*": [
         "./src/*"
+      ],
+      "@packages/backend/*": [
+        "../../packages/backend/*"
       ]
     }
   },

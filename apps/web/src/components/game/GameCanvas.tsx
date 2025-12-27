@@ -119,34 +119,63 @@ function StructuresRenderer({ map }: { map: any }) {
 function BuildingsRenderer({ buildings, players }: { buildings: any[], players: any[] }) {
     return (
         <group>
-            {buildings.map((b: any, i: number) => (
-                <mesh key={i} position={[b.x + b.width/2 - 0.5, b.y + b.height/2 - 0.5, 0.2]}>
-                    <boxGeometry args={[b.width, b.height, 2]} />
-                    <meshStandardMaterial color="blue" />
-                </mesh>
-            ))}
+            {buildings.map((b: any, i: number) => {
+                const isUnderConstruction = b.constructionEnd && b.constructionEnd > Date.now();
+
+                return (
+                    <group key={i}>
+                        <mesh position={[b.x + b.width/2 - 0.5, b.y + b.height/2 - 0.5, 0.2]}>
+                            <boxGeometry args={[b.width, b.height, 2]} />
+                            <meshStandardMaterial
+                                color={isUnderConstruction ? "orange" : "blue"}
+                                wireframe={isUnderConstruction}
+                            />
+                        </mesh>
+                        {/* Status for Under Construction */}
+                        {isUnderConstruction && (
+                            <mesh position={[b.x + b.width/2 - 0.5, b.y + b.height/2 - 0.5, 1.5]}>
+                                <boxGeometry args={[b.width * 0.8, b.height * 0.8, 0.1]} />
+                                <meshBasicMaterial color="yellow" transparent opacity={0.5} />
+                            </mesh>
+                        )}
+                    </group>
+                );
+            })}
         </group>
     )
 }
 
-function PlacementManager({ game, width, height, onPlace }: { game: any, width: number, height: number, onPlace: (x: number, y: number) => void }) {
+function PlacementManager({
+    game,
+    width,
+    height,
+    onPlace,
+    isBuildMode,
+    selectedBuilding
+}: {
+    game: any,
+    width: number,
+    height: number,
+    onPlace: (x: number, y: number) => void,
+    isBuildMode?: boolean,
+    selectedBuilding?: string | null
+}) {
     const { camera, raycaster, scene } = useThree();
     const [hoverPos, setHoverPos] = React.useState<{x: number, y: number} | null>(null);
     const planeRef = React.useRef<THREE.Mesh>(null);
 
     useFrame((state) => {
-        if (game.phase !== "placement") {
+        // Active if in placement phase OR in build mode during simulation
+        const isActive = game.phase === "placement" || (game.phase === "simulation" && isBuildMode);
+
+        if (!isActive) {
              if (hoverPos) setHoverPos(null);
              return;
         }
 
         // Raycast against infinite plane at Z=0
         raycaster.setFromCamera(state.pointer, camera);
-        const intersects = raycaster.intersectObjects(scene.children, true);
 
-        // Find intersection with the map plane
-        // Simplified: just project onto Z=0
-        // Or use a dedicated invisible plane
         if (planeRef.current) {
             const hits = raycaster.intersectObject(planeRef.current);
             if (hits.length > 0) {
@@ -159,8 +188,27 @@ function PlacementManager({ game, width, height, onPlace }: { game: any, width: 
     });
 
     const handleClick = () => {
-        if (hoverPos && game.phase === "placement") {
-            onPlace(hoverPos.x, hoverPos.y);
+        if (hoverPos) {
+            if (game.phase === "placement") {
+                onPlace(hoverPos.x, hoverPos.y);
+            } else if (game.phase === "simulation" && isBuildMode) {
+                onPlace(hoverPos.x, hoverPos.y);
+            }
+        }
+    }
+
+    // Determine cursor size
+    let cursorWidth = 1;
+    let cursorHeight = 1;
+
+    if (game.phase === "placement") {
+        cursorWidth = 5;
+        cursorHeight = 5;
+    } else if (selectedBuilding) {
+        switch(selectedBuilding) {
+            case "house": cursorWidth = 2; cursorHeight = 2; break;
+            case "workshop": cursorWidth = 4; cursorHeight = 4; break;
+            case "barracks": cursorWidth = 3; cursorHeight = 3; break;
         }
     }
 
@@ -172,10 +220,10 @@ function PlacementManager({ game, width, height, onPlace }: { game: any, width: 
              </mesh>
 
              {/* Cursor */}
-             {hoverPos && game.phase === "placement" && (
-                 <mesh position={[hoverPos.x + 2, hoverPos.y + 2, 1]}>
-                     <boxGeometry args={[5, 5, 0.5]} />
-                     <meshBasicMaterial color="lime" transparent opacity={0.5} wireframe />
+             {hoverPos && (
+                 <mesh position={[hoverPos.x + cursorWidth/2 - 0.5, hoverPos.y + cursorHeight/2 - 0.5, 1]}>
+                     <boxGeometry args={[cursorWidth, cursorHeight, 0.5]} />
+                     <meshBasicMaterial color={isBuildMode ? "cyan" : "lime"} transparent opacity={0.5} wireframe />
                  </mesh>
              )}
         </group>
@@ -193,21 +241,30 @@ function generateTileCanvas(color: string) {
     return canvas;
 }
 
-export function GameCanvas({ game, staticMap, buildings, players }: GameCanvasProps) {
+interface ExtendedGameCanvasProps extends GameCanvasProps {
+    isBuildMode?: boolean;
+    selectedBuilding?: string | null;
+    onPlaceBuilding?: (type: string, x: number, y: number) => void;
+}
+
+export function GameCanvas({ game, staticMap, buildings, players, isBuildMode, selectedBuilding, onPlaceBuilding }: ExtendedGameCanvasProps) {
   const { data: session } = authClient.useSession();
 
   const placeBase = useMutation(api.game.placeBase);
 
-  const handlePlaceBase = async (x: number, y: number) => {
-      try {
-          await placeBase({
-              gameId: game._id,
-              x,
-              y,
-          });
-      } catch (e) {
-          console.error("Failed to place base:", e);
-          // Show toast
+  const handlePlace = async (x: number, y: number) => {
+      if (game.phase === "placement") {
+          try {
+              await placeBase({
+                  gameId: game._id,
+                  x,
+                  y,
+              });
+          } catch (e) {
+              console.error("Failed to place base:", e);
+          }
+      } else if (isBuildMode && selectedBuilding && onPlaceBuilding) {
+          onPlaceBuilding(selectedBuilding, x, y);
       }
   };
 
@@ -238,7 +295,14 @@ export function GameCanvas({ game, staticMap, buildings, players }: GameCanvasPr
       <StructuresRenderer map={staticMap} />
       <BuildingsRenderer buildings={buildings} players={players} />
 
-      <PlacementManager game={game} width={staticMap.width} height={staticMap.height} onPlace={handlePlaceBase} />
+      <PlacementManager
+        game={game}
+        width={staticMap.width}
+        height={staticMap.height}
+        onPlace={handlePlace}
+        isBuildMode={isBuildMode}
+        selectedBuilding={selectedBuilding}
+      />
 
     </Canvas>
   );

@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query, internalMutation } from "./_generated/server";
+import { internal } from "./_generated/api";
 
 // 5x5 Central Base
 const BASE_SIZE = 5;
@@ -97,7 +98,66 @@ export const endPlacementPhase = internalMutation({
                 phaseStart: Date.now(),
                 phaseEnd: undefined // Indefinite or specific round time
             });
+
+            // Start the tick loop
+            await ctx.scheduler.runAfter(0, internal.game.tick, { gameId: game._id });
         }
+    }
+});
+
+export const tick = internalMutation({
+    args: {
+        gameId: v.id("games")
+    },
+    handler: async (ctx, args) => {
+        const game = await ctx.db.get(args.gameId);
+        if (!game || game.status !== "active" || game.phase !== "simulation") return;
+
+        // Give 1000 credits to every player
+        const players = await ctx.db
+            .query("players")
+            .filter((q) => q.eq(q.field("gameId"), args.gameId))
+            .collect();
+
+        for (const player of players) {
+            await ctx.db.patch(player._id, {
+                credits: (player.credits || 0) + 1000
+            });
+        }
+
+        // Schedule next tick in 5 seconds
+        await ctx.scheduler.runAfter(5000, internal.game.tick, { gameId: args.gameId });
+    }
+});
+
+export const deleteGame = mutation({
+    args: {
+        gameId: v.id("games")
+    },
+    handler: async (ctx, args) => {
+        const game = await ctx.db.get(args.gameId);
+        if (!game) return;
+
+        // Delete players
+        const players = await ctx.db.query("players").filter(q => q.eq(q.field("gameId"), args.gameId)).collect();
+        for (const p of players) {
+            await ctx.db.delete(p._id);
+        }
+
+        // Delete teams
+        const teams = await ctx.db.query("teams").filter(q => q.eq(q.field("gameId"), args.gameId)).collect();
+        for (const t of teams) {
+            await ctx.db.delete(t._id);
+        }
+
+        // Delete maps
+        const maps = await ctx.db.query("maps").withIndex("by_gameId", q => q.eq("gameId", args.gameId)).collect();
+        for (const m of maps) {
+            await ctx.db.delete(m._id);
+        }
+
+        // Delete game
+        await ctx.db.delete(game._id);
     }
 });
 

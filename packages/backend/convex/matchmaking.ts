@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation } from "./_generated/server";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
+import { generateMap, PLANETS } from "./lib/mapgen";
 
 export const findOrCreateLobby = mutation({
   args: {
@@ -163,11 +164,35 @@ export const checkGameStart = mutation({
                 }
             }
 
-            // Update game status
+            // Select Random Planet
+            const planetKeys = Object.values(PLANETS);
+            const planetType = planetKeys[Math.floor(Math.random() * planetKeys.length)];
+
+            // Generate Map
+            const { tiles, structures } = generateMap(planetType, 256, 256);
+
+            // Save Map
+            await ctx.db.insert("maps", {
+                gameId: game._id,
+                width: 256,
+                height: 256,
+                tiles,
+                structures,
+                buildings: [],
+                planetType
+            });
+
+            // Update game status & Phase
             await ctx.db.patch(game._id, {
                 status: "active",
-                startedAt: now
+                startedAt: now,
+                phase: "placement",
+                phaseStart: now,
+                phaseEnd: now + 15000 // 15 Seconds
             });
+
+            // Schedule End of Placement Phase
+            await ctx.scheduler.runAfter(15000, internal.game.endPlacementPhase, { gameId: game._id });
 
             return { started: true };
         }

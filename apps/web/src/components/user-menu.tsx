@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -21,14 +20,16 @@ export default function UserMenu() {
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger render={<Button variant="outline" />}>{user?.name}</DropdownMenuTrigger>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline">{user?.name}</Button>
+      </DropdownMenuTrigger>
       <DropdownMenuContent className="bg-card">
-        <DropdownMenuGroup>
-          <DropdownMenuLabel>My Account</DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem>{user?.email}</DropdownMenuItem>
-          <DropdownMenuItem
-            variant="destructive"
+        <DropdownMenuLabel>My Account</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem>{user?.email}</DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Button
+            className="w-full"
             onClick={() => {
               authClient.signOut({
                 fetchOptions: {
@@ -38,10 +39,11 @@ export default function UserMenu() {
                 },
               });
             }}
+            variant="destructive"
           >
             Sign Out
-          </DropdownMenuItem>
-        </DropdownMenuGroup>
+          </Button>
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );

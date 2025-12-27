@@ -4,7 +4,7 @@ import * as React from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@packages/backend/convex/_generated/api";
-import { Loader2, Coins, Hammer } from "lucide-react";
+import { Loader2, Coins, Hammer, Shield, Crosshair } from "lucide-react";
 import { GameCanvas } from "@/components/game/GameCanvas";
 import type { Id } from "@packages/backend/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
@@ -23,17 +23,18 @@ export default function GamePage() {
   const gameId = params.gameId as Id<"games">;
   const { data: session } = authClient.useSession();
 
-  // Poll game state (Dynamic: buildings, players, phase, residents)
+  // Poll game state
   const gameState = useQuery(api.game.getGameState, { gameId });
-
-  // Load Static Map (Tiles, Structures) - Only loads once ideally or when null
   const staticMap = useQuery(api.game.getStaticMap, { gameId });
 
   const deleteGame = useMutation(api.game.deleteGame);
   const placeBuilding = useMutation(api.game.placeBuilding);
+  const moveTroop = useMutation(api.game.moveTroop);
 
-  const [isBuildMode, setIsBuildMode] = React.useState(false);
+  // Modes: Build, Defense (Troop Command)
+  const [mode, setMode] = React.useState<"none" | "build" | "defense">("none");
   const [selectedBuilding, setSelectedBuilding] = React.useState<string | null>("house");
+  const [selectedTroopId, setSelectedTroopId] = React.useState<string | null>(null);
 
   const handleEndGame = async () => {
       await deleteGame({ gameId });
@@ -54,6 +55,29 @@ export default function GamePage() {
       }
   };
 
+  const handleMoveTroop = async (x: number, y: number) => {
+      if (!selectedTroopId) return;
+      try {
+          await moveTroop({
+              gameId,
+              troopId: selectedTroopId,
+              targetX: x,
+              targetY: y
+          });
+      } catch (e: any) {
+          console.error("Failed to move troop:", e);
+      }
+  };
+
+  // Handle map clicks based on mode
+  const handleMapClick = (x: number, y: number) => {
+      if (mode === "build" && selectedBuilding) {
+          handlePlaceBuilding(selectedBuilding, x, y);
+      } else if (mode === "defense" && selectedTroopId) {
+          handleMoveTroop(x, y);
+      }
+  };
+
   if (gameState === undefined || staticMap === undefined) {
       return (
           <div className="flex h-screen w-full items-center justify-center bg-black text-white">
@@ -71,18 +95,27 @@ export default function GamePage() {
       );
   }
 
-  const { game, players, buildings, residentChunks } = gameState;
-
-  // Try to match by user ID if session is available, otherwise fallback
+  const { game, players, buildings, unitChunks } = gameState;
   const myPlayer = players.find(p => session?.user?.id && p.userId === session.user.id) || players.find(p => !p.isBot) || players[0];
   const credits = myPlayer?.credits || 0;
 
-  // Calculate Inflation
-  // Count buildings owned by me, excluding base_central
+  // Inflation
   const myBuildingsCount = buildings.filter(b => b.ownerId === myPlayer?._id && b.type !== "base_central").length;
   const inflationMultiplier = Math.pow(2, myBuildingsCount);
 
-  // Logic to handle Lobby -> Game transition if user refreshed or linked directly
+  // Collect my troops
+  const myTroops: any[] = [];
+  if (unitChunks) {
+      for (const chunk of unitChunks) {
+          for (const t of chunk.troops) {
+               if (t.commander.ownerId === myPlayer?._id) {
+                   myTroops.push(t);
+               }
+          }
+      }
+  }
+
+  // Phase Check
   if (game.phase === "lobby" || game.status === "waiting") {
       return (
           <div className="flex h-screen w-full items-center justify-center bg-black text-white">
@@ -90,8 +123,6 @@ export default function GamePage() {
           </div>
       );
   }
-
-  // Wait for map if game is active
   if (!staticMap && game.phase !== "lobby") {
        return (
           <div className="flex h-screen w-full items-center justify-center bg-black text-white">
@@ -101,25 +132,30 @@ export default function GamePage() {
       );
   }
 
-  // Calculate Time Left in Phase
   const now = Date.now();
   const phaseTimeLeft = game.phaseEnd ? Math.max(0, Math.ceil((game.phaseEnd - now) / 1000)) : 0;
 
   return (
     <div className="relative w-full h-screen overflow-hidden bg-black">
-      {/* 3D Game Canvas */}
       <GameCanvas
         game={game}
         staticMap={staticMap}
         buildings={buildings}
         players={players}
-        residentChunks={residentChunks}
-        isBuildMode={isBuildMode}
+        unitChunks={unitChunks}
+        isBuildMode={mode === "build"}
         selectedBuilding={selectedBuilding}
-        onPlaceBuilding={handlePlaceBuilding}
+        onPlaceBuilding={(type, x, y) => handleMapClick(x, y)}
+        // Additional props for selection
+        selectedTroopId={selectedTroopId}
+        onSelectTroop={(id) => {
+            setSelectedTroopId(id);
+            if (id) setMode("defense");
+        }}
+        onMoveTroop={handleMapClick} // Reuse handler logic
       />
 
-      {/* HUD Overlay */}
+      {/* HUD */}
       <div className="absolute top-0 left-0 w-full p-4 pointer-events-none flex justify-between items-start">
          <div className="bg-black/50 p-2 border border-white/20 pixel-corners text-white">
             <h1 className="font-sans text-xl text-primary uppercase">{staticMap?.planetType || "UNKNOWN SYSTEM"}</h1>
@@ -150,8 +186,36 @@ export default function GamePage() {
          </div>
       </div>
 
+      {/* Defense Mode Sidebar */}
+      {mode === "defense" && (
+          <div className="absolute top-20 left-4 pointer-events-auto flex flex-col gap-2 bg-black/80 border border-white/20 p-2 pixel-corners max-h-[60vh] overflow-y-auto">
+              <div className="font-mono text-xs text-muted-foreground mb-2">COMMANDERS</div>
+              {myTroops.length === 0 ? (
+                  <div className="text-white text-xs">No Troops available.<br/>Build Barracks.</div>
+              ) : (
+                  myTroops.map(t => (
+                      <div
+                        key={t.id}
+                        className={cn(
+                            "flex items-center gap-2 p-2 border cursor-pointer hover:bg-white/10",
+                            selectedTroopId === t.id ? "border-primary bg-primary/20" : "border-white/20"
+                        )}
+                        onClick={() => setSelectedTroopId(t.id)}
+                      >
+                          <div className="w-4 h-4 bg-red-500 rounded-full" /> {/* Icon */}
+                          <div className="flex flex-col">
+                              <span className="font-mono text-xs text-white">Cmdr {t.id.slice(0, 4)}</span>
+                              <span className="font-mono text-[10px] text-white/50">{t.soldiers.length} Soldiers</span>
+                              <span className="font-mono text-[10px] text-green-400">{t.state.toUpperCase()}</span>
+                          </div>
+                      </div>
+                  ))
+              )}
+          </div>
+      )}
+
       {/* Build Menu */}
-      {isBuildMode && (
+      {mode === "build" && (
           <div className="absolute bottom-20 left-1/2 -translate-x-1/2 pointer-events-auto flex gap-2">
               {BUILDINGS_INFO.map((b) => {
                   const cost = b.baseCost * inflationMultiplier;
@@ -180,14 +244,34 @@ export default function GamePage() {
       {/* Controls */}
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 pointer-events-auto flex gap-4">
           {game.phase === "simulation" && (
-            <Button
-                variant={isBuildMode ? "default" : "secondary"}
-                className={cn("font-mono pixel-corners min-w-[120px]", isBuildMode && "border-2 border-yellow-400")}
-                onClick={() => setIsBuildMode(!isBuildMode)}
-            >
-                <Hammer className="w-4 h-4 mr-2" />
-                {isBuildMode ? "CLOSE" : "BUILD MODE"}
-            </Button>
+            <>
+                <Button
+                    variant={mode === "build" ? "default" : "secondary"}
+                    className={cn("font-mono pixel-corners min-w-[120px]", mode === "build" && "border-2 border-yellow-400")}
+                    onClick={() => {
+                        setMode(mode === "build" ? "none" : "build");
+                        if (mode !== "build") setSelectedBuilding("house");
+                    }}
+                >
+                    <Hammer className="w-4 h-4 mr-2" />
+                    {mode === "build" ? "CLOSE" : "BUILD MODE"}
+                </Button>
+
+                <Button
+                    variant={mode === "defense" ? "default" : "secondary"}
+                    className={cn("font-mono pixel-corners min-w-[120px]", mode === "defense" && "border-2 border-red-500")}
+                    onClick={() => {
+                        setMode(mode === "defense" ? "none" : "defense");
+                        // Auto select first troop if none
+                        if (mode !== "defense" && !selectedTroopId && myTroops.length > 0) {
+                            setSelectedTroopId(myTroops[0].id);
+                        }
+                    }}
+                >
+                    <Shield className="w-4 h-4 mr-2" />
+                    {mode === "defense" ? "CLOSE" : "DEFENSE MODE"}
+                </Button>
+            </>
           )}
       </div>
 
@@ -206,6 +290,15 @@ export default function GamePage() {
           <div className="absolute bottom-10 left-1/2 -translate-x-1/2 bg-primary/20 p-4 border-2 border-primary pixel-corners text-center animate-pulse pointer-events-none">
               <h2 className="font-sans text-2xl text-primary">DEPLOY COMMAND POST</h2>
               <p className="font-mono text-xs text-white">CLICK TO PLACE BASE (5x5)</p>
+          </div>
+      )}
+
+      {mode === "defense" && selectedTroopId && (
+          <div className="absolute bottom-24 left-1/2 -translate-x-1/2 text-center pointer-events-none">
+              <div className="flex items-center gap-2 text-red-500 bg-black/50 p-2 pixel-corners">
+                  <Crosshair className="w-4 h-4 animate-pulse" />
+                  <span className="font-mono text-xs">SELECT TARGET TO MOVE</span>
+              </div>
           </div>
       )}
     </div>

@@ -3,6 +3,7 @@
 import { Loader2 } from "lucide-react";
 import { AuthDialog } from "@/components/auth/auth-dialog";
 import { UserProfile } from "@/components/game/user-profile";
+import { ModeSelector } from "@/components/game/mode-selector";
 import { Button } from "@/components/ui/button";
 import { authClient } from "@/lib/auth-client";
 
@@ -54,7 +55,11 @@ export default function Home() {
         </div>
 
         {session ? (
-          <UserProfile user={session.user} />
+          <div className="flex flex-col items-center gap-8">
+            {/* Top Center Play Button */}
+            <ModeSelector user={session.user} />
+            <UserProfile user={session.user} />
+          </div>
         ) : (
           <div className="flex flex-col gap-4 animate-in fade-in slide-in-from-bottom-8 duration-1000">
             <AuthDialog defaultTab="login">

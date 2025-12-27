@@ -9,15 +9,16 @@
     "dev:setup": "convex dev --configure --until-success"
   },
   "dependencies": {
-    "convex": "catalog:",
-    "better-auth": "catalog:",
     "@convex-dev/better-auth": "catalog:",
+    "better-auth": "catalog:",
+    "convex": "catalog:",
     "dotenv": "catalog:",
+    "simplex-noise": "^4.0.3",
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@rimfront/config": "workspace:*",
     "@types/node": "^24.3.0",
-    "typescript": "^5",
-    "@rimfront/config": "workspace:*"
+    "typescript": "^5"
   }
 }

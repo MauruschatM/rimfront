@@ -8,6 +8,9 @@ export default defineSchema({
     subMode: v.string(), // "ffa", "duos", "squads", "teams"
     createdAt: v.number(),
     startedAt: v.optional(v.number()),
+    phase: v.optional(v.string()), // "lobby", "placement", "simulation"
+    phaseStart: v.optional(v.number()),
+    phaseEnd: v.optional(v.number()),
   }),
   teams: defineTable({
     gameId: v.id("games"),
@@ -20,5 +23,15 @@ export default defineSchema({
     isBot: v.boolean(),
     name: v.string(),
     teamId: v.optional(v.id("teams")),
+    hasPlacedBase: v.optional(v.boolean()),
   }),
+  maps: defineTable({
+    gameId: v.id("games"),
+    width: v.number(),
+    height: v.number(),
+    tiles: v.array(v.number()), // Flattened 2D array
+    structures: v.array(v.any()), // JSON object for structures
+    buildings: v.array(v.any()), // JSON object for player buildings
+    planetType: v.string(),
+  }).index("by_gameId", ["gameId"]),
 });

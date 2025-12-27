@@ -4,6 +4,7 @@ import * as React from "react";
 import { Canvas, useThree, useFrame } from "@react-three/fiber";
 import { OrthographicCamera, MapControls, Text } from "@react-three/drei";
 import * as THREE from "three";
+import { Line } from "@react-three/drei";
 import { createPlanetPalette, generateTileTexture } from "@/lib/assets";
 import { useMutation } from "convex/react";
 import { api } from "@packages/backend/convex/_generated/api";
@@ -156,6 +157,10 @@ function BuildingsRenderer({ buildings, unitChunks }: { buildings: any[], unitCh
                 const occupancy = workshopOccupancy[b.id] || 0;
                 const isLowStaff = b.type === "workshop" && occupancy < 1;
 
+                // Capture Progress Visualization
+                // Assuming max capture progress is 5 seconds
+                const capturePct = b.captureProgress ? Math.min(b.captureProgress / 5, 1) : 0;
+
                 return (
                     <group key={i}>
                         <mesh position={[b.x + b.width/2 - 0.5, b.y + b.height/2 - 0.5, 0.2]}>
@@ -171,6 +176,13 @@ function BuildingsRenderer({ buildings, unitChunks }: { buildings: any[], unitCh
                                 <boxGeometry args={[b.width * 0.8, b.height * 0.8, 0.1]} />
                                 <meshBasicMaterial color="yellow" transparent opacity={0.5} />
                             </mesh>
+                        )}
+                        {/* Capture Progress Bar */}
+                        {capturePct > 0 && (
+                             <mesh position={[b.x + b.width/2 - 0.5, b.y + b.height + 0.5, 2]}>
+                                 <boxGeometry args={[b.width * capturePct, 0.2, 0.1]} />
+                                 <meshBasicMaterial color="red" />
+                             </mesh>
                         )}
                         {/* Status for Low Staff */}
                         {isLowStaff && !isUnderConstruction && (
@@ -314,8 +326,47 @@ function UnitsRenderer({ unitChunks, selectedTroopId, onSelectTroop }: { unitChu
         if (soldiersRef.current.instanceColor) soldiersRef.current.instanceColor.needsUpdate = true;
     }, [soldiers, selectedTroopId]);
 
+    // Lasers Visualization
+    const lasers = React.useMemo(() => {
+        const lines: any[] = [];
+        const now = Date.now();
+        // Since we don't have perfect server time sync, assume shots within last 200ms are valid
+        // But backend only updates every 50ms, so client receives updates.
+        // We rely on `lastShot` timestamp from backend.
+        // Note: Client clock might differ. Ideally we use relative time or an animation trigger.
+        // For simplicity: if lastShot > now - 200 (assuming synced clocks roughly or just show it if it's new)
+        // Actually, let's just show it if `lastShot` is "recent" in our received data cycle.
+
+        // Better: We show a laser if (state == "attacking" and targetPos exists).
+        // To make it look like "shooting", we can flicker it or random offset.
+
+        [...commanders, ...soldiers].forEach(unit => {
+             if (unit.state === "attacking" && unit.targetPos) {
+                 // Random chance to show laser this frame (flicker)
+                 if (Math.random() > 0.5) {
+                     lines.push({
+                         start: [unit.x, unit.y, 1],
+                         end: [unit.targetPos.x, unit.targetPos.y, 1],
+                         color: "cyan" // Star Wars laser color
+                     });
+                 }
+             }
+        });
+        return lines;
+    }, [commanders, soldiers]);
+
     return (
         <group>
+            {/* Lasers */}
+            {lasers.map((l, i) => (
+                <Line
+                    key={i}
+                    points={[l.start, l.end]}
+                    color={l.color}
+                    lineWidth={1}
+                />
+            ))}
+
             {/* Families */}
             {families.length > 0 && (
                 <instancedMesh ref={familiesRef} args={[undefined, undefined, families.length]}>
@@ -477,6 +528,18 @@ export function GameCanvas({ game, staticMap, buildings, players, unitChunks, is
   };
 
   if (!staticMap) return null;
+
+  // Victory Screen Overlay
+  if (game.status === "ended") {
+      return (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80">
+              <div className="text-center animate-in fade-in zoom-in duration-1000">
+                  <h1 className="text-6xl font-bold text-yellow-400 font-pixel mb-4">GAME OVER</h1>
+                  <p className="text-2xl text-white font-pixel">The Galaxy has a new ruler.</p>
+              </div>
+          </div>
+      );
+  }
 
   return (
     <Canvas

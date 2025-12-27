@@ -1,10 +1,12 @@
 import { v } from "convex/values";
 import { mutation, query, internalMutation } from "./_generated/server";
-import { internal } from "./_generated/api";
+import { internal, api } from "./_generated/api";
 import { createCollisionMap, findPath } from "./lib/pathfinding";
+import { SpatialMap } from "./lib/spatial";
 
 // 5x5 Central Base
 const BASE_SIZE = 5;
+const GAME_TICK_RATE = 50; // ms
 
 const BUILDINGS: Record<string, { width: number; height: number; cost: number; timePerTile: number }> = {
   house: { width: 2, height: 2, cost: 2000, timePerTile: 2000 },
@@ -271,12 +273,238 @@ export const endPlacementPhase = internalMutation({
                 phaseEnd: undefined
             });
 
-            await ctx.scheduler.runAfter(0, internal.game.tick, { gameId: game._id });
+            // Start both loops
+            await ctx.scheduler.runAfter(0, internal.game.round, { gameId: game._id });
+            await ctx.scheduler.runAfter(0, internal.game.game_tick, { gameId: game._id });
         }
     }
 });
 
-export const tick = internalMutation({
+export const game_tick = internalMutation({
+    args: {
+        gameId: v.id("games")
+    },
+    handler: async (ctx, args) => {
+        const game = await ctx.db.get(args.gameId);
+        if (!game || game.status !== "active" || game.phase !== "simulation") return;
+
+        const now = Date.now();
+        const mapDoc = await ctx.db.query("maps").withIndex("by_gameId", q => q.eq("gameId", args.gameId)).first();
+        if (!mapDoc) return;
+
+        const unitChunks = await ctx.db.query("unit_chunks").withIndex("by_gameId", q => q.eq("gameId", args.gameId)).collect();
+
+        // 1. Build Spatial Map
+        const spatial = new SpatialMap(mapDoc.width, mapDoc.height);
+
+        // Add Buildings
+        for (const b of mapDoc.buildings) {
+            spatial.addBuilding(b);
+        }
+
+        // Add Units
+        for (const chunk of unitChunks) {
+             for (const fam of chunk.families) {
+                 for (const m of fam.members) {
+                     spatial.addUnit({ ...m, type: "resident" });
+                 }
+             }
+             for (const troop of chunk.troops) {
+                 spatial.addUnit({ ...troop.commander, type: "commander", ownerId: troop.commander.ownerId });
+                 for (const s of troop.soldiers) {
+                     spatial.addUnit({ ...s, type: "soldier", ownerId: troop.commander.ownerId });
+                 }
+             }
+        }
+
+        // 2. Process Units (Movement & Combat Prep)
+        const SPEED_TILES_PER_TICK = 5 * (GAME_TICK_RATE / 5000); // Normalize speed: 5 tiles per 5s -> ~0.05 per 50ms
+        const blocked = createCollisionMap(mapDoc.width, mapDoc.height, mapDoc.buildings);
+
+        let anyChunkDirty = false;
+        let mapDirty = false;
+        const dirtyChunks = new Set<string>();
+        const deadUnitIds = new Set<string>();
+
+        // We process all units.
+        // Note: For pure movement, we just interpolate along the path.
+        // But we must stop if we are in range of an enemy.
+
+        for (const chunk of unitChunks) {
+            let chunkDirty = false;
+
+            // Helper to process a member
+            const processMember = (member: any, type: "commander" | "soldier" | "resident") => {
+                 // Check for enemies
+                 // Soldiers/Commanders can attack units (10 range) or buildings (capture range 2)
+                 // If we have a target building, we need to get close (2).
+                 // If we have a target unit, we need 10.
+
+                 const isCombatUnit = type === "soldier" || type === "commander";
+                 const searchRange = isCombatUnit ? 10 : 0; // Look up to 10 tiles
+
+                 if (searchRange > 0) {
+                      const enemy = spatial.findClosestTarget(member.x, member.y, searchRange, member.ownerId);
+
+                      if (enemy) {
+                          // Determine required range based on target type
+                          const requiredRange = enemy.type === "building" ? 2 : 10;
+
+                          // Are we in range?
+                          if (enemy.dist <= requiredRange) {
+                              // Combat / Capture
+                              member.state = "attacking"; // Visual state
+                              member.targetId = enemy.target.id;
+                              member.targetPos = { x: enemy.target.x, y: enemy.target.y }; // For visuals
+
+                              if (enemy.type === "unit") {
+                                  // Attack Logic (High probability hit)
+                                  if (Math.random() < 0.9) {
+                                      // Mark as dead using ID
+                                      deadUnitIds.add(enemy.target.id);
+                                      member.lastShot = Date.now();
+                                  }
+                              } else if (enemy.type === "building") {
+                                  // Capture Logic
+                                  // We are in range (2) of a building
+                                  // We handle capture update later or here?
+                                  // Let's do it here since we have the reference.
+                                  // But we need the mapDoc reference, not the copy in SpatialMap.
+                                  const realBuilding = mapDoc.buildings.find(mb => mb.id === enemy.target.id);
+                                  if (realBuilding && realBuilding.ownerId !== member.ownerId) {
+                                      realBuilding.captureProgress = (realBuilding.captureProgress || 0) + (GAME_TICK_RATE / 1000);
+                                      if (realBuilding.captureProgress >= 5) {
+                                          realBuilding.ownerId = member.ownerId;
+                                          realBuilding.captureProgress = 0;
+                                          mapDirty = true;
+                                      } else {
+                                          mapDirty = true;
+                                      }
+                                  }
+                              }
+                              return; // Stop processing movement
+                          }
+                          // Else: We see an enemy but are out of range?
+                          // The `searchRange` (10) covers unit attack range.
+                          // If target is building, we see it at 10 but need to go to 2.
+                          // We should continue moving if we have a path, OR path to it?
+                          // "Troops attack... closest..."
+                          // If we are at 9 tiles from building, we should move closer.
+                          // But pathfinding is heavy.
+                          // For now, if we have a path, continue. If idle, we might need to path.
+                          // Requirement says "Automatically attack".
+                          // If we are idle and see an enemy out of range (but within 10?), we should move?
+                          // Wait, if building is at 9, `enemy.dist` is 9. `requiredRange` is 2.
+                          // We continue to `if (member.path...)`.
+                      }
+                 }
+
+
+                 // If not attacking, move
+                 if (member.path && member.path.length > 0) {
+                    const pathLen = member.path.length;
+                    // Current fractional index
+                    let nextIndex = (member.pathIndex || 0) + SPEED_TILES_PER_TICK;
+
+                    if (nextIndex >= pathLen - 1) {
+                         // Arrived
+                        const finalPos = member.path[pathLen - 1];
+                        member.x = finalPos.x;
+                        member.y = finalPos.y;
+                        member.path = undefined;
+                        member.pathIndex = undefined;
+                        member.state = "idle";
+                    } else {
+                        member.pathIndex = nextIndex;
+                        // Interpolate
+                        const idxFloor = Math.floor(nextIndex);
+                        const idxCeil = Math.min(idxFloor + 1, pathLen - 1);
+                        const t = nextIndex - idxFloor;
+
+                        const p1 = member.path[idxFloor];
+                        const p2 = member.path[idxCeil];
+
+                        member.x = p1.x + (p2.x - p1.x) * t;
+                        member.y = p1.y + (p2.y - p1.y) * t;
+                        member.state = "moving";
+                    }
+                 }
+            };
+
+            for (const troop of chunk.troops) {
+                processMember(troop.commander, "commander");
+                for (const s of troop.soldiers) processMember(s, "soldier");
+
+                // Filter out dead soldiers
+                const originalCount = troop.soldiers.length;
+                troop.soldiers = troop.soldiers.filter((s: any) => !deadUnitIds.has(s.id));
+                if (troop.soldiers.length !== originalCount) chunkDirty = true;
+
+                // Check Commander Death
+                if (deadUnitIds.has(troop.commander.id)) {
+                    // Mark troop for removal
+                    // We can't set property on troop easily to filter later in this loop structure without another pass or mutable flag.
+                    // Let's add troop ID to a "deadTroops" set or just filter it out next.
+                    // Easier: Mark it here.
+                    (troop as any)._dead = true;
+                    chunkDirty = true;
+                }
+            }
+
+             // Filter dead troops
+             const originalTroopCount = chunk.troops.length;
+             chunk.troops = chunk.troops.filter((t: any) => !t._dead);
+             if (chunk.troops.length !== originalTroopCount) chunkDirty = true;
+
+             for (const fam of chunk.families) {
+                 for (const m of fam.members) processMember(m, "resident");
+
+                 // Filter dead members
+                 const originalMemCount = fam.members.length;
+                 fam.members = fam.members.filter((m: any) => !deadUnitIds.has(m.id));
+                 if (fam.members.length !== originalMemCount) chunkDirty = true;
+
+                 // We assume families don't "die" as a group, just members.
+             }
+
+            if (chunkDirty) {
+                dirtyChunks.add(chunk._id);
+            }
+        }
+
+        // Save dirty chunks
+        for (const chunk of unitChunks) {
+            if (dirtyChunks.has(chunk._id)) {
+                 await ctx.db.patch(chunk._id, {
+                    families: chunk.families,
+                    troops: chunk.troops
+                });
+            }
+        }
+
+        // Save Map (Buildings)
+        if (mapDirty) {
+            await ctx.db.patch(mapDoc._id, { buildings: mapDoc.buildings });
+
+            // Check Win Condition
+            const bases = mapDoc.buildings.filter(b => b.type === "base_central");
+            const owners = new Set(bases.map(b => b.ownerId));
+
+            if (owners.size === 1 && bases.length > 0) {
+                // Winner!
+                const winnerId = owners.values().next().value;
+                await ctx.db.patch(args.gameId, { status: "ended" });
+                // Schedule deletion
+                await ctx.scheduler.runAfter(10000, api.game.deleteGame, { gameId: args.gameId });
+                return; // Stop loop
+            }
+        }
+
+        await ctx.scheduler.runAfter(GAME_TICK_RATE, internal.game.game_tick, { gameId: args.gameId });
+    }
+});
+
+export const round = internalMutation({
     args: {
         gameId: v.id("games")
     },
@@ -478,7 +706,7 @@ export const tick = internalMutation({
             }
         }
 
-        await ctx.scheduler.runAfter(5000, internal.game.tick, { gameId: args.gameId });
+        await ctx.scheduler.runAfter(5000, internal.game.round, { gameId: args.gameId });
     }
 });
 

@@ -16,6 +16,13 @@ const BUILDINGS: Record<
   barracks: { width: 3, height: 3, cost: 4000, timePerTile: 2000 },
 };
 
+// Tick & Round timing
+const TICK_INTERVAL_MS = 100; // 100ms per tick
+const TICKS_PER_ROUND = 50; // 50 ticks = 5 seconds = 1 round
+
+// Movement: 8 ticks to traverse one tile = 800ms per tile
+const TICKS_PER_TILE = 8;
+
 // Interface for buildings stored in map
 interface Building {
   id: string;
@@ -135,6 +142,8 @@ type Entity = {
   health?: number;
   attackTargetId?: string;
   attackEndTime?: number;
+  pathProgress?: number; // 0.0-1.0 progress within current tile
+  reservedFactoryId?: string; // Reserved workshop slot
 };
 
 type Troupe = {
@@ -369,17 +378,21 @@ function handleWalking(
   workshops?: Building[],
   houses?: Building[]
 ): boolean {
-  if (!member.path || member.path.length === 0) return false;
-  const SPEED_TILES_PER_TICK = 5;
-  const pathLen = member.path.length;
-  const nextIndex = (member.pathIndex || 0) + SPEED_TILES_PER_TICK;
+  if (!member.path || member.path.length === 0) {
+    return false;
+  }
 
-  if (nextIndex >= pathLen - 1) {
+  const pathLen = member.path.length;
+  const currentIndex = member.pathIndex || 0;
+
+  // If we're at or past the end of the path, finalize
+  if (currentIndex >= pathLen - 1) {
     const finalPos = member.path[pathLen - 1];
     member.x = finalPos.x;
     member.y = finalPos.y;
     member.path = undefined;
     member.pathIndex = undefined;
+    member.pathProgress = undefined;
 
     if (member.targetWorkshopId && workshops) {
       const workshop = workshops.find((w) => w.id === member.targetWorkshopId);
@@ -423,10 +436,29 @@ function handleWalking(
     return true;
   }
 
-  member.pathIndex = nextIndex;
-  const nextPos = member.path[nextIndex];
-  member.x = nextPos.x;
-  member.y = nextPos.y;
+  // Progress within current tile (0.0 to 1.0)
+  const progress = (member.pathProgress || 0) + 1 / TICKS_PER_TILE;
+
+  if (progress >= 1) {
+    // Move to next tile
+    const nextIndex = currentIndex + 1;
+    member.pathIndex = nextIndex;
+    member.pathProgress = progress - 1; // Carry over excess
+
+    if (nextIndex < pathLen) {
+      const nextPos = member.path[nextIndex];
+      member.x = nextPos.x;
+      member.y = nextPos.y;
+    }
+  } else {
+    // Interpolate position between current and next tile
+    member.pathProgress = progress;
+    const currentPos = member.path[currentIndex];
+    const nextPos = member.path[Math.min(currentIndex + 1, pathLen - 1)];
+    member.x = currentPos.x + (nextPos.x - currentPos.x) * progress;
+    member.y = currentPos.y + (nextPos.y - currentPos.y) * progress;
+  }
+
   member.state = "moving";
   return true;
 }
@@ -634,17 +666,25 @@ function updateMember(
 
 function categorizeBuildings(
   buildings: Building[],
-  playerCredits: Record<string, number>
+  playerCredits: Record<string, number>,
+  isRoundTick: boolean
 ) {
   const houses: Building[] = [];
   const workshops: Building[] = [];
   const barracks: Building[] = [];
 
   for (const b of buildings) {
-    if (b.type === "house") houses.push(b);
-    if (b.type === "workshop") workshops.push(b);
-    if (b.type === "barracks") barracks.push(b);
-    if (b.type === "base_central" && b.ownerId) {
+    if (b.type === "house") {
+      houses.push(b);
+    }
+    if (b.type === "workshop") {
+      workshops.push(b);
+    }
+    if (b.type === "barracks") {
+      barracks.push(b);
+    }
+    // Only award base credits on round boundaries (every 50 ticks = 5 seconds)
+    if (b.type === "base_central" && b.ownerId && isRoundTick) {
       playerCredits[b.ownerId] = (playerCredits[b.ownerId] || 0) + 1000;
     }
   }
@@ -663,7 +703,8 @@ async function processActiveEntities(
   houses: Building[],
   playerCredits: Record<string, number>,
   spatialHash: SpatialHash,
-  entities: Entity[]
+  entities: Entity[],
+  isRoundTick: boolean
 ) {
   const deletedEntityIds = new Set<string>();
 
@@ -750,7 +791,8 @@ async function processActiveEntities(
       }
     }
 
-    if (entity.state === "working" && entity.ownerId) {
+    // Award working credits only on round ticks (every 50 ticks = 5 seconds)
+    if (entity.state === "working" && entity.ownerId && isRoundTick) {
       playerCredits[entity.ownerId] =
         (playerCredits[entity.ownerId] || 0) + 1000;
     }
@@ -1204,6 +1246,11 @@ export const tick = internalMutation({
 
     const now = Date.now();
 
+    // Track tick count for round-based economy
+    const tickCount = (game.tickCount || 0) + 1;
+    const isRoundTick = tickCount % TICKS_PER_ROUND === 0;
+    await ctx.db.patch(game._id, { tickCount });
+
     // 1. Timer & End Game Check
     if (game.phaseEnd && now > game.phaseEnd) {
       await ctx.db.patch(game._id, { status: "ended" });
@@ -1342,7 +1389,8 @@ export const tick = internalMutation({
     );
     const { houses, workshops, barracks } = categorizeBuildings(
       mapDoc.buildings,
-      playerCredits
+      playerCredits,
+      isRoundTick
     );
 
     // Build Spatial Hash
@@ -1368,7 +1416,8 @@ export const tick = internalMutation({
       houses,
       playerCredits,
       spatialHash,
-      entities
+      entities,
+      isRoundTick
     );
     await processInsideEntities(
       ctx,
@@ -1401,7 +1450,7 @@ export const tick = internalMutation({
       await eliminatePlayer(ctx, args.gameId, elim.victimId, elim.conquerorId);
     }
 
-    await ctx.scheduler.runAfter(5000, internal.game.tick, {
+    await ctx.scheduler.runAfter(TICK_INTERVAL_MS, internal.game.tick, {
       gameId: args.gameId,
     });
   },

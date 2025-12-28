@@ -161,12 +161,14 @@ function useInterpolatedUnits(entities: Entity[] = []) {
 
       const now = Date.now();
       const elapsed = now - start.time;
-      const duration = 50; // Server tick rate is 50ms.
-      // Add slight buffer (e.g. 1.2x) to smooth out network jitter, but strictly 50ms matches tick.
+      const duration = 100; // Server tick rate is 100ms.
+      // Match the tick interval for smooth interpolation.
 
-      const alpha = Math.min(elapsed / duration, 1);
+      // Smooth easing function (ease-out quad) for natural movement
+      const t = Math.min(elapsed / duration, 1);
+      const alpha = t * (2 - t); // ease-out quad: t * (2 - t)
 
-      // Lerp
+      // Lerp with easing
       const x = start.x + (targetX - start.x) * alpha;
       const y = start.y + (targetY - start.y) * alpha;
 

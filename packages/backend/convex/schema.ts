@@ -25,6 +25,10 @@ const entityObject = {
   health: v.optional(v.number()),
   attackTargetId: v.optional(v.string()),
   attackEndTime: v.optional(v.number()),
+  // Smooth movement
+  pathProgress: v.optional(v.number()), // 0.0-1.0 progress within current tile
+  // Factory reservation
+  reservedFactoryId: v.optional(v.string()), // Reserved workshop slot
 };
 
 export default defineSchema({
@@ -37,6 +41,7 @@ export default defineSchema({
     phase: v.optional(v.string()), // "lobby", "placement", "simulation"
     phaseStart: v.optional(v.number()),
     phaseEnd: v.optional(v.number()),
+    tickCount: v.optional(v.number()), // Tracks ticks for round-based economy
   }),
   teams: defineTable({
     gameId: v.id("games"),

@@ -404,6 +404,22 @@ function BuildingsRenderer({
           stats[entity.homeId].active++;
           stats[entity.homeId].total++;
         }
+        // Count soldiers towards barracks
+        if (entity.troupeId && !entity.isInside) {
+          const troupe = troupes?.find((t) => t._id === entity.troupeId);
+          if (troupe) {
+            if (!stats[troupe.barracksId]) {
+              stats[troupe.barracksId] = {
+                active: 0,
+                working: 0,
+                sleeping: 0,
+                total: 0,
+              };
+            }
+            stats[troupe.barracksId].active++;
+            stats[troupe.barracksId].total++;
+          }
+        }
         if (entity.workplaceId) {
           if (!stats[entity.workplaceId]) {
             stats[entity.workplaceId] = {
@@ -698,7 +714,7 @@ function UnitsRenderer({
   }, [entities]);
 
   // Interpolation Frame Loop
-  useFrame(() => {
+  useFrame((state) => {
     // Helper to update mesh
     const updateMesh = (mesh: THREE.InstancedMesh | null, list: Entity[]) => {
       if (!mesh) return;
@@ -710,7 +726,17 @@ function UnitsRenderer({
           entity.x,
           entity.y
         );
-        const z = entity.type === "commander" ? 1 : 0.5;
+        let z = entity.type === "commander" ? 1 : 0.5;
+
+        // Add bobbing animation if moving or patrolling
+        if (
+          entity.state === "moving" ||
+          entity.state === "patrol" ||
+          entity.path
+        ) {
+          z += Math.abs(Math.sin(state.clock.elapsedTime * 10)) * 0.2;
+        }
+
         const scale =
           entity.type === "commander"
             ? 0.8

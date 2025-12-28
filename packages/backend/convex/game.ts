@@ -672,12 +672,23 @@ function handleIdleLogic(
     }
 
     if (Math.random() < 0.4) {
-      const patrolRadius = 2;
+      const isTroop = member.type === "soldier" || member.type === "commander";
+      let anchorX = member.x;
+      let anchorY = member.y;
+      let patrolRadius = 2;
+
+      // Re-thinking: let's use the target if available for troops
+      if (isTroop && target) {
+        anchorX = target.x;
+        anchorY = target.y;
+        patrolRadius = 3; // Slightly larger for troops
+      }
+
       const tx = Math.max(
         0,
         Math.min(
           mapWidth - 1,
-          member.x +
+          anchorX +
             Math.floor(Math.random() * (patrolRadius * 2 + 1)) -
             patrolRadius
         )
@@ -685,8 +696,8 @@ function handleIdleLogic(
       const ty = Math.max(
         0,
         Math.min(
-          mapWidth - 1,
-          member.y +
+          mapHeight - 1,
+          anchorY +
             Math.floor(Math.random() * (patrolRadius * 2 + 1)) -
             patrolRadius
         )
@@ -966,6 +977,10 @@ async function handleSpawning(
       barracksId: b.id,
       ownerId: b.ownerId,
       state: "idle",
+      targetPos: {
+        x: b.x + Math.floor(b.width / 2),
+        y: b.y + Math.floor(b.height / 2),
+      },
       lastSpawnTime: now, // Initialize spawn timer
     });
 
@@ -976,7 +991,7 @@ async function handleSpawning(
       type: "commander",
       state: "idle",
       x: b.x + 1,
-      y: b.y + 1,
+      y: b.y + b.height, // Spawn outside the front
       isInside: false,
     });
     knownTroops.add(b.id);
@@ -1031,27 +1046,41 @@ async function handleSpawning(
   }
 
   for (const troupe of troupesUpdated) {
-    const soldiersCount = entities.filter(
-      (e) => e.troupeId === troupe._id && e.type === "soldier"
-    ).length;
     const commander = entities.find(
       (e) => e.troupeId === troupe._id && e.type === "commander"
     );
 
     // Only spawn soldiers if under capacity AND 30 seconds have passed
-    if (commander && soldiersCount < 4) {
+    // Limit total troupe members (soldiers + commander) to 4
+    if (
+      commander &&
+      entities.filter((e) => e.troupeId === troupe._id).length < 4
+    ) {
       const lastSpawn = troupe.lastSpawnTime || 0;
       if (now > lastSpawn + SPAWN_INTERVAL_MS) {
-        await ctx.db.insert("entities", {
+        const offset = {
+          x: (Math.random() - 0.5) * 1,
+          y: Math.random() * 1,
+        };
+        const barracksObj = barracks.find((b) => b.id === troupe.barracksId);
+        const spawnX = barracksObj ? barracksObj.x + 1 : commander.x;
+        const spawnY = barracksObj
+          ? barracksObj.y + barracksObj.height
+          : commander.y;
+
+        const newSoldier = {
           gameId,
           ownerId: troupe.ownerId,
           troupeId: troupe._id,
           type: "soldier",
           state: "idle",
-          x: commander.x,
-          y: commander.y,
+          x: spawnX + offset.x,
+          y: spawnY + offset.y,
           isInside: false,
-        });
+          health: 10,
+        };
+        await ctx.db.insert("entities", newSoldier);
+        entities.push(newSoldier as any); // Update local array to prevent logic delay
         await ctx.db.patch(troupe._id, { lastSpawnTime: now });
       }
     }

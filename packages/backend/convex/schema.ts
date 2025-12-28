@@ -20,6 +20,11 @@ const entityObject = {
   targetWorkshopId: v.optional(v.string()), // Workshop member is walking to
   targetHomeId: v.optional(v.string()), // Home member is walking to (for sleep)
   workStartTime: v.optional(v.number()), // When work/sleep started (for duration)
+  // Combat
+  lastAttackTime: v.optional(v.number()),
+  health: v.optional(v.number()),
+  attackTargetId: v.optional(v.string()),
+  attackEndTime: v.optional(v.number()),
 };
 
 export default defineSchema({

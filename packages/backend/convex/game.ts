@@ -131,6 +131,10 @@ type Entity = {
   targetWorkshopId?: string;
   targetHomeId?: string;
   workplaceId?: string;
+  lastAttackTime?: number;
+  health?: number;
+  attackTargetId?: string;
+  attackEndTime?: number;
 };
 
 type Troupe = {
@@ -286,6 +290,74 @@ function calculateBuildingCost(
     (b) => b.ownerId === playerId && b.type !== "base_central"
   ).length;
   return baseCost * 2 ** count;
+}
+
+// --- Helper: Spatial Hash ---
+
+class SpatialHash {
+  grid: Map<
+    string,
+    Array<{ type: string; id: string; x: number; y: number; ownerId: string }>
+  >;
+  cellSize: number;
+
+  constructor(cellSize: number) {
+    this.cellSize = cellSize;
+    this.grid = new Map();
+  }
+
+  _key(x: number, y: number) {
+    return `${Math.floor(x / this.cellSize)},${Math.floor(y / this.cellSize)}`;
+  }
+
+  insert(type: string, id: string, x: number, y: number, ownerId: string) {
+    const key = this._key(x, y);
+    if (!this.grid.has(key)) {
+      this.grid.set(key, []);
+    }
+    this.grid.get(key)?.push({ type, id, x, y, ownerId });
+  }
+
+  query(
+    x: number,
+    y: number,
+    radius: number
+  ): Array<{
+    type: string;
+    id: string;
+    x: number;
+    y: number;
+    ownerId: string;
+  }> {
+    const results: Array<{
+      type: string;
+      id: string;
+      x: number;
+      y: number;
+      ownerId: string;
+    }> = [];
+    const minX = Math.floor((x - radius) / this.cellSize);
+    const maxX = Math.floor((x + radius) / this.cellSize);
+    const minY = Math.floor((y - radius) / this.cellSize);
+    const maxY = Math.floor((y + radius) / this.cellSize);
+
+    for (let cx = minX; cx <= maxX; cx++) {
+      for (let cy = minY; cy <= maxY; cy++) {
+        const key = `${cx},${cy}`;
+        const items = this.grid.get(key);
+        if (items) {
+          for (const item of items) {
+            const dx = item.x - x;
+            const dy = item.y - y;
+            if (dx * dx + dy * dy <= radius * radius) {
+              results.push(item);
+            }
+          }
+        }
+      }
+    }
+    return results;
+  }
 }
 
 // --- Helper: Unit Update Logic ---
@@ -589,15 +661,22 @@ async function processActiveEntities(
   blocked: Set<string>,
   workshops: Building[],
   houses: Building[],
-  playerCredits: Record<string, number>
+  playerCredits: Record<string, number>,
+  spatialHash: SpatialHash,
+  entities: Entity[]
 ) {
+  const deletedEntityIds = new Set<string>();
+
   for (const entity of activeEntities) {
+    if (deletedEntityIds.has(entity._id)) continue;
+
     let dirty = false;
     const troupe = entity.troupeId
       ? troupes.find((t) => t._id === entity.troupeId)
       : undefined;
     const targetPos = troupe?.targetPos;
 
+    // Movement Logic
     if (
       updateMember(
         entity,
@@ -613,12 +692,77 @@ async function processActiveEntities(
       dirty = true;
     }
 
+    // Combat Logic (Soldiers Only)
+    if (entity.type === "soldier") {
+      const COOLDOWN = 1000; // 1 second firing rate
+      const RANGE = 10;
+
+      if (!entity.lastAttackTime || now > entity.lastAttackTime + COOLDOWN) {
+        const enemies = spatialHash
+          .query(entity.x, entity.y, RANGE)
+          .filter(
+            (e) =>
+              e.ownerId !== entity.ownerId &&
+              e.type !== "building" &&
+              !deletedEntityIds.has(e.id)
+          ); // Targeting units only for now? Or buildings too? Prompt says "Units automatically engage enemies within range".
+
+        // Prioritize closest
+        let target: { id: string; x: number; y: number } | null = null;
+        let minDist = Number.POSITIVE_INFINITY;
+
+        for (const enemy of enemies) {
+          const dist = (enemy.x - entity.x) ** 2 + (enemy.y - entity.y) ** 2;
+          if (dist < minDist) {
+            minDist = dist;
+            target = enemy;
+          }
+        }
+
+        if (target) {
+          // Attack
+          entity.lastAttackTime = now;
+          entity.attackTargetId = target.id;
+          entity.attackEndTime = now + 200; // Laser visual duration
+          dirty = true;
+
+          // Resolve Hit (Server-side)
+          if (Math.random() < 0.8) {
+            // High hit prob
+            // Find target entity to damage
+            const targetEntity = entities.find((e) => e._id === target!.id);
+            if (targetEntity && !deletedEntityIds.has(targetEntity._id)) {
+              targetEntity.health = (targetEntity.health || 1) - 1;
+              // If dead, we handle cleanup later or immediately?
+              // Ideally we mark it, but we are iterating activeEntities.
+              // Let's just patch it now.
+              if (targetEntity.health <= 0) {
+                await ctx.db.delete(targetEntity._id);
+                deletedEntityIds.add(targetEntity._id);
+              } else {
+                await ctx.db.patch(targetEntity._id, {
+                  health: targetEntity.health,
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+
     if (entity.state === "working" && entity.ownerId) {
       playerCredits[entity.ownerId] =
         (playerCredits[entity.ownerId] || 0) + 1000;
     }
 
-    if (dirty) {
+    // Cleanup attack visuals
+    if (entity.attackEndTime && now > entity.attackEndTime) {
+      entity.attackTargetId = undefined;
+      entity.attackEndTime = undefined;
+      dirty = true;
+    }
+
+    if (dirty && !deletedEntityIds.has(entity._id)) {
       await ctx.db.patch(entity._id, entity);
     }
   }
@@ -1066,6 +1210,27 @@ export const tick = internalMutation({
       return;
     }
 
+    // 1.1 Victory Check (Auto-End if 1 player left)
+    // Only check if game is active
+    if (game.status === "active" && game.phase === "simulation") {
+      const activePlayers = (
+        await ctx.db
+          .query("players")
+          .filter((q) => q.eq(q.field("gameId"), args.gameId))
+          .collect()
+      ).filter((p: Player) => !p.status || p.status === "active");
+
+      if (activePlayers.length <= 1 && players.length > 1) {
+        // Ensure >1 total players so solo testing doesn't instant-end
+        await ctx.db.patch(game._id, { status: "ended" });
+        // Schedule cleanup
+        await ctx.scheduler.runAfter(10_000, internal.game.deleteGame, {
+          gameId: args.gameId,
+        });
+        return;
+      }
+    }
+
     const mapDoc = await ctx.db
       .query("maps")
       .withIndex("by_gameId", (q) => q.eq("gameId", args.gameId))
@@ -1180,6 +1345,17 @@ export const tick = internalMutation({
       playerCredits
     );
 
+    // Build Spatial Hash
+    const spatialHash = new SpatialHash(10); // 10x10 chunks
+    for (const e of entities) {
+      if (!e.isInside) {
+        spatialHash.insert(e.type, e._id, e.x, e.y, e.ownerId);
+      }
+    }
+    // Add buildings to hash? Prompt says units engage enemies.
+    // If we want them to attack buildings, we should add buildings too.
+    // For now, let's stick to units attacking units as primary combat.
+
     await processActiveEntities(
       ctx,
       entities.filter((e) => !e.isInside),
@@ -1190,7 +1366,9 @@ export const tick = internalMutation({
       blocked,
       workshops,
       houses,
-      playerCredits
+      playerCredits,
+      spatialHash,
+      entities
     );
     await processInsideEntities(
       ctx,

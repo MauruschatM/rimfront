@@ -1,7 +1,7 @@
 "use client";
 
 import { api } from "@packages/backend/convex/_generated/api";
-import { Text } from "@react-three/drei";
+import { Line, Text } from "@react-three/drei";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useMutation } from "convex/react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -30,6 +30,11 @@ interface Entity {
   targetWorkshopId?: string;
   targetHomeId?: string;
   workplaceId?: string;
+  // Combat
+  lastAttackTime?: number;
+  health?: number;
+  attackTargetId?: string;
+  attackEndTime?: number;
 }
 
 interface Building {
@@ -42,6 +47,8 @@ interface Building {
   height: number;
   health: number;
   constructionEnd?: number;
+  captureStart?: number;
+  capturingOwnerId?: string;
 }
 
 interface Player {
@@ -106,6 +113,69 @@ function reassembleTiles(
   }
 
   return tiles;
+}
+
+// --- Hooks ---
+
+function useInterpolatedUnits(entities: Entity[] = []) {
+  // Store previous state for interpolation
+  const prevEntitiesRef = useRef<
+    Record<string, { x: number; y: number; time: number }>
+  >({});
+  const interpolatedRef = useRef<Record<string, { x: number; y: number }>>({});
+
+  // Update ref when entities change (server update)
+  useEffect(() => {
+    const now = Date.now();
+    entities.forEach((e) => {
+      const currentPos = interpolatedRef.current[e._id] || { x: e.x, y: e.y };
+
+      // Store the position we are starting FROM (current interpolated pos) and the TIME we received the update
+      prevEntitiesRef.current[e._id] = {
+        x: currentPos.x,
+        y: currentPos.y,
+        time: now,
+      };
+
+      // Initialize if new
+      if (!interpolatedRef.current[e._id]) {
+        interpolatedRef.current[e._id] = { x: e.x, y: e.y };
+      }
+    });
+
+    // Cleanup removed entities
+    const currentIds = new Set(entities.map((e) => e._id));
+    for (const id in prevEntitiesRef.current) {
+      if (!currentIds.has(id)) {
+        delete prevEntitiesRef.current[id];
+        delete interpolatedRef.current[id];
+      }
+    }
+  }, [entities]);
+
+  return {
+    getInterpolatedPosition: (id: string, targetX: number, targetY: number) => {
+      const start = prevEntitiesRef.current[id];
+      // If no history, snap to target
+      if (!start) return { x: targetX, y: targetY };
+
+      const now = Date.now();
+      const elapsed = now - start.time;
+      const duration = 50; // Server tick rate is 50ms.
+      // Add slight buffer (e.g. 1.2x) to smooth out network jitter, but strictly 50ms matches tick.
+
+      const alpha = Math.min(elapsed / duration, 1);
+
+      // Lerp
+      const x = start.x + (targetX - start.x) * alpha;
+      const y = start.y + (targetY - start.y) * alpha;
+
+      // Update current interpolated ref so next update starts from here
+      interpolatedRef.current[id] = { x, y };
+
+      return { x, y };
+    },
+  };
 }
 
 // --- Components ---
@@ -319,9 +389,95 @@ function BuildingsRenderer({
                 {occupancy > 0 ? `👷${occupancy}` : "⚠️0"}
               </Text>
             )}
+
+            {/* Capture Progress Bar */}
+            {b.captureStart && (
+              <group
+                position={[b.x + b.width / 2 - 0.5, b.y + b.height + 1.5, 3]}
+              >
+                <mesh position={[0, 0, 0]}>
+                  <planeGeometry args={[3, 0.4]} />
+                  <meshBasicMaterial color="black" />
+                </mesh>
+                <mesh
+                  position={[
+                    -1.5 +
+                      (Math.min((Date.now() - b.captureStart) / 30_000, 1) *
+                        3) /
+                        2,
+                    0,
+                    0.1,
+                  ]}
+                >
+                  <planeGeometry
+                    args={[
+                      Math.min((Date.now() - b.captureStart) / 30_000, 1) * 3,
+                      0.3,
+                    ]}
+                  />
+                  <meshBasicMaterial color="red" />
+                </mesh>
+              </group>
+            )}
           </group>
         );
       })}
+    </group>
+  );
+}
+
+function LasersRenderer({ entities }: { entities: Entity[] }) {
+  // Filter for attacking units
+  const attackingUnits = useMemo(() => {
+    return entities.filter(
+      (e) => e.attackTargetId && e.attackEndTime && e.attackEndTime > Date.now()
+    );
+  }, [entities]);
+
+  // We need to re-render every frame to update lasers or handle animations
+  // But strictly `Line` is reactive.
+  // However, target positions might move.
+  // Ideally we use useFrame to update line refs.
+  // For simplicity with `drei/Line`, we just map them.
+
+  // Find targets
+  const lasers = attackingUnits
+    .map((unit) => {
+      const target = entities.find((e) => e._id === unit.attackTargetId);
+      if (!target) return null;
+
+      // Add jitter to target position
+      const jitterX = (Math.random() - 0.5) * 0.5;
+      const jitterY = (Math.random() - 0.5) * 0.5;
+
+      return {
+        id: unit._id,
+        start: [unit.x, unit.y, 1] as [number, number, number],
+        end: [target.x + jitterX, target.y + jitterY, 1] as [
+          number,
+          number,
+          number,
+        ],
+      };
+    })
+    .filter(Boolean) as {
+    id: string;
+    start: [number, number, number];
+    end: [number, number, number];
+  }[];
+
+  return (
+    <group>
+      {lasers.map((l) => (
+        <Line
+          color="blue"
+          key={l.id}
+          lineWidth={2}
+          opacity={0.8}
+          points={[l.start, l.end]}
+          transparent
+        />
+      ))}
     </group>
   );
 }
@@ -341,6 +497,8 @@ function UnitsRenderer({
   const commandersRef = useRef<THREE.InstancedMesh>(null);
   const soldiersRef = useRef<THREE.InstancedMesh>(null);
 
+  const interpolation = useInterpolatedUnits(entities);
+
   const { families, commanders, soldiers } = useMemo(() => {
     const families: Entity[] = [];
     const commanders: Entity[] = [];
@@ -358,6 +516,40 @@ function UnitsRenderer({
     }
     return { families, commanders, soldiers };
   }, [entities]);
+
+  // Interpolation Frame Loop
+  useFrame(() => {
+    // Helper to update mesh
+    const updateMesh = (mesh: THREE.InstancedMesh | null, list: Entity[]) => {
+      if (!mesh) return;
+      const tempObj = new THREE.Object3D();
+      list.forEach((entity, i) => {
+        // Get interpolated pos
+        const pos = interpolation.getInterpolatedPosition(
+          entity._id,
+          entity.x,
+          entity.y
+        );
+        const z = entity.type === "commander" ? 1 : 0.5;
+        const scale =
+          entity.type === "commander"
+            ? 0.8
+            : entity.type === "soldier"
+              ? 0.4
+              : 0.5;
+
+        tempObj.position.set(pos.x, pos.y, z);
+        tempObj.scale.set(scale, scale, scale);
+        tempObj.updateMatrix();
+        mesh.setMatrixAt(i, tempObj.matrix);
+      });
+      mesh.instanceMatrix.needsUpdate = true;
+    };
+
+    updateMesh(familiesRef.current, families);
+    updateMesh(commandersRef.current, commanders);
+    updateMesh(soldiersRef.current, soldiers);
+  });
 
   const handleUnitClick = useCallback(
     (
@@ -381,79 +573,53 @@ function UnitsRenderer({
   );
 
   useEffect(() => {
+    // Only update colors in useEffect, transforms handled by useFrame
     const mesh = familiesRef.current;
-    if (!mesh) {
-      return;
-    }
-    const tempObj = new THREE.Object3D();
-    const color = new THREE.Color();
-    families.forEach((r, i) => {
-      tempObj.position.set(r.x, r.y, 0.5);
-      tempObj.scale.set(0.5, 0.5, 0.5);
-      tempObj.updateMatrix();
-      mesh.setMatrixAt(i, tempObj.matrix);
-      if (r.state === "working") {
-        color.set("lime");
-      } else if (r.state === "sleeping") {
-        color.set("blue");
-      } else {
-        color.set("white");
-      }
-      mesh.setColorAt(i, color);
-    });
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) {
-      mesh.instanceColor.needsUpdate = true;
+    if (mesh) {
+      const color = new THREE.Color();
+      families.forEach((r, i) => {
+        if (r.state === "working") {
+          color.set("lime");
+        } else if (r.state === "sleeping") {
+          color.set("blue");
+        } else {
+          color.set("white");
+        }
+        mesh.setColorAt(i, color);
+      });
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     }
   }, [families]);
 
   useEffect(() => {
     const mesh = commandersRef.current;
-    if (!mesh) {
-      return;
-    }
-    const tempObj = new THREE.Object3D();
-    const color = new THREE.Color();
-    commanders.forEach((c, i) => {
-      tempObj.position.set(c.x, c.y, 1);
-      tempObj.scale.set(0.8, 0.8, 0.8);
-      tempObj.updateMatrix();
-      mesh.setMatrixAt(i, tempObj.matrix);
-      if (selectedTroopId && c.troupeId === selectedTroopId) {
-        color.set("yellow");
-      } else {
-        color.set("red");
-      }
-      mesh.setColorAt(i, color);
-    });
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) {
-      mesh.instanceColor.needsUpdate = true;
+    if (mesh) {
+      const color = new THREE.Color();
+      commanders.forEach((c, i) => {
+        if (selectedTroopId && c.troupeId === selectedTroopId) {
+          color.set("yellow");
+        } else {
+          color.set("red");
+        }
+        mesh.setColorAt(i, color);
+      });
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     }
   }, [commanders, selectedTroopId]);
 
   useEffect(() => {
     const mesh = soldiersRef.current;
-    if (!mesh) {
-      return;
-    }
-    const tempObj = new THREE.Object3D();
-    const color = new THREE.Color();
-    soldiers.forEach((s, i) => {
-      tempObj.position.set(s.x, s.y, 0.5);
-      tempObj.scale.set(0.4, 0.4, 0.4);
-      tempObj.updateMatrix();
-      mesh.setMatrixAt(i, tempObj.matrix);
-      if (selectedTroopId && s.troupeId === selectedTroopId) {
-        color.set("orange");
-      } else {
-        color.set("maroon");
-      }
-      mesh.setColorAt(i, color);
-    });
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) {
-      mesh.instanceColor.needsUpdate = true;
+    if (mesh) {
+      const color = new THREE.Color();
+      soldiers.forEach((s, i) => {
+        if (selectedTroopId && s.troupeId === selectedTroopId) {
+          color.set("orange");
+        } else {
+          color.set("maroon");
+        }
+        mesh.setColorAt(i, color);
+      });
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     }
   }, [soldiers, selectedTroopId]);
 
@@ -818,6 +984,8 @@ export function GameCanvas({
       <MapRenderer map={staticMap} />
       <StructuresRenderer map={staticMap} />
       <BuildingsRenderer buildings={buildings} entities={entities} />
+
+      {entities && <LasersRenderer entities={entities} />}
 
       {entities && (
         <UnitsRenderer

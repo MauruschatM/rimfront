@@ -2,8 +2,8 @@
 
 import { Loader2 } from "lucide-react";
 import { AuthDialog } from "@/components/auth/auth-dialog";
-import { UserProfile } from "@/components/game/user-profile";
 import { ModeSelector } from "@/components/game/mode-selector";
+import { UserProfile } from "@/components/game/user-profile";
 import { Button } from "@/components/ui/button";
 import { authClient } from "@/lib/auth-client";
 
@@ -15,7 +15,9 @@ export default function Home() {
       <div className="flex h-full w-full items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
           <Loader2 className="h-12 w-12 animate-spin text-primary" />
-          <p className="font-mono text-sm text-primary animate-pulse">INITIALIZING SYSTEMS...</p>
+          <p className="animate-pulse font-mono text-primary text-sm">
+            INITIALIZING SYSTEMS...
+          </p>
         </div>
       </div>
     );
@@ -32,8 +34,8 @@ export default function Home() {
         */}
         {Array.from({ length: 50 }).map((_, i) => (
           <div
-            key={i}
             className="star"
+            key={i}
             style={{
               top: `${Math.random() * 100}%`,
               left: `${Math.random() * 100}%`,
@@ -45,11 +47,11 @@ export default function Home() {
 
       <div className="z-10 flex flex-col items-center gap-8">
         {/* Logo / Title */}
-        <div className="text-center space-y-2">
-          <h1 className="font-sans text-6xl md:text-8xl text-primary drop-shadow-[4px_4px_0_var(--color-primary-foreground)] select-none">
+        <div className="space-y-2 text-center">
+          <h1 className="select-none font-sans text-6xl text-primary drop-shadow-[4px_4px_0_var(--color-primary-foreground)] md:text-8xl">
             RIMFRONT
           </h1>
-          <p className="font-mono text-xs md:text-sm text-muted-foreground tracking-[0.5em] uppercase">
+          <p className="font-mono text-muted-foreground text-xs uppercase tracking-[0.5em] md:text-sm">
             Tactical Pixel Warfare
           </p>
         </div>
@@ -61,27 +63,36 @@ export default function Home() {
             <UserProfile user={session.user} />
           </div>
         ) : (
-          <div className="flex flex-col gap-4 animate-in fade-in slide-in-from-bottom-8 duration-1000">
+          <div className="fade-in slide-in-from-bottom-8 flex animate-in flex-col gap-4 duration-1000">
             <AuthDialog defaultTab="login">
-              <Button size="lg" className="font-sans text-xl h-16 px-12 rounded-none pixel-corners border-2 border-primary bg-background text-primary hover:bg-primary hover:text-primary-foreground transition-all pixel-border">
+              <Button
+                className="pixel-corners pixel-border h-16 rounded-none border-2 border-primary bg-background px-12 font-sans text-primary text-xl transition-all hover:bg-primary hover:text-primary-foreground"
+                size="lg"
+              >
                 START GAME
               </Button>
             </AuthDialog>
 
-            <div className="flex gap-4 justify-center">
-                <Button variant="link" className="text-muted-foreground font-mono text-xs">
-                    SERVER STATUS: ONLINE
-                </Button>
-                <Button variant="link" className="text-muted-foreground font-mono text-xs">
-                    V 0.1.0 ALPHA
-                </Button>
+            <div className="flex justify-center gap-4">
+              <Button
+                className="font-mono text-muted-foreground text-xs"
+                variant="link"
+              >
+                SERVER STATUS: ONLINE
+              </Button>
+              <Button
+                className="font-mono text-muted-foreground text-xs"
+                variant="link"
+              >
+                V 0.1.0 ALPHA
+              </Button>
             </div>
           </div>
         )}
       </div>
 
       {/* Scanline effect overlay */}
-      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] z-[50] bg-[length:100%_2px,3px_100%] opacity-20" />
+      <div className="pointer-events-none absolute inset-0 z-[50] bg-[length:100%_2px,3px_100%] bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] opacity-20" />
     </main>
   );
 }

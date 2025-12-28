@@ -1,12 +1,12 @@
 "use client";
 
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Loader2 } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import * as z from "zod";
-import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
-
+import * as z from "zod";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -16,12 +16,6 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
-import {
   Form,
   FormControl,
   FormField,
@@ -30,13 +24,18 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { authClient } from "@/lib/auth-client";
 
 const authSchema = z.object({
   email: z.string().email({ message: "Invalid email address" }),
-  password: z.string().min(8, { message: "Password must be at least 8 characters" }),
-  name: z.string().min(2, { message: "Name must be at least 2 characters" }).optional(),
+  password: z
+    .string()
+    .min(8, { message: "Password must be at least 8 characters" }),
+  name: z
+    .string()
+    .min(2, { message: "Name must be at least 2 characters" })
+    .optional(),
 });
 
 type AuthFormValues = z.infer<typeof authSchema>;
@@ -46,7 +45,10 @@ interface AuthDialogProps {
   defaultTab?: "login" | "signup";
 }
 
-export function AuthDialog({ children, defaultTab = "login" }: AuthDialogProps) {
+export function AuthDialog({
+  children,
+  defaultTab = "login",
+}: AuthDialogProps) {
   const [open, setOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"login" | "signup">(defaultTab);
   const [isLoading, setIsLoading] = useState(false);
@@ -120,11 +122,11 @@ export function AuthDialog({ children, defaultTab = "login" }: AuthDialogProps) 
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog onOpenChange={setOpen} open={open}>
       <DialogTrigger asChild>{children}</DialogTrigger>
-      <DialogContent className="sm:max-w-md pixel-border bg-card text-card-foreground">
+      <DialogContent className="pixel-border bg-card text-card-foreground sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-center font-sans text-xl text-primary">
+          <DialogTitle className="text-center font-sans text-primary text-xl">
             RIMFRONT ACCESS
           </DialogTitle>
           <DialogDescription className="text-center font-mono text-xs">
@@ -132,38 +134,43 @@ export function AuthDialog({ children, defaultTab = "login" }: AuthDialogProps) 
           </DialogDescription>
         </DialogHeader>
         <Tabs
-          value={activeTab}
-          onValueChange={(v) => setActiveTab(v as "login" | "signup")}
           className="w-full"
+          onValueChange={(v) => setActiveTab(v as "login" | "signup")}
+          value={activeTab}
         >
           <TabsList className="grid w-full grid-cols-2 bg-muted/50 p-1">
             <TabsTrigger
-              value="login"
               className="font-mono text-xs data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+              value="login"
             >
               LOGIN
             </TabsTrigger>
             <TabsTrigger
-              value="signup"
               className="font-mono text-xs data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+              value="signup"
             >
               SIGN UP
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="login" className="space-y-4 pt-4">
+          <TabsContent className="space-y-4 pt-4" value="login">
             <Form {...loginForm}>
-              <form onSubmit={loginForm.handleSubmit(onLogin)} className="space-y-4">
+              <form
+                className="space-y-4"
+                onSubmit={loginForm.handleSubmit(onLogin)}
+              >
                 <FormField
                   control={loginForm.control}
                   name="email"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="font-mono text-xs uppercase">Email</FormLabel>
+                      <FormLabel className="font-mono text-xs uppercase">
+                        Email
+                      </FormLabel>
                       <FormControl>
                         <Input
-                          placeholder="pilot@rimfront.net"
                           className="font-mono text-sm"
+                          placeholder="pilot@rimfront.net"
                           {...field}
                         />
                       </FormControl>
@@ -176,11 +183,13 @@ export function AuthDialog({ children, defaultTab = "login" }: AuthDialogProps) 
                   name="password"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="font-mono text-xs uppercase">Password</FormLabel>
+                      <FormLabel className="font-mono text-xs uppercase">
+                        Password
+                      </FormLabel>
                       <FormControl>
                         <Input
-                          type="password"
                           className="font-mono text-sm"
+                          type="password"
                           {...field}
                         />
                       </FormControl>
@@ -189,30 +198,37 @@ export function AuthDialog({ children, defaultTab = "login" }: AuthDialogProps) 
                   )}
                 />
                 <Button
-                  type="submit"
-                  className="w-full font-sans bg-primary hover:bg-primary/90 text-primary-foreground rounded-none pixel-corners"
+                  className="pixel-corners w-full rounded-none bg-primary font-sans text-primary-foreground hover:bg-primary/90"
                   disabled={isLoading}
+                  type="submit"
                 >
-                  {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {isLoading && (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  )}
                   AUTHENTICATE
                 </Button>
               </form>
             </Form>
           </TabsContent>
 
-          <TabsContent value="signup" className="space-y-4 pt-4">
+          <TabsContent className="space-y-4 pt-4" value="signup">
             <Form {...signupForm}>
-              <form onSubmit={signupForm.handleSubmit(onSignup)} className="space-y-4">
+              <form
+                className="space-y-4"
+                onSubmit={signupForm.handleSubmit(onSignup)}
+              >
                 <FormField
                   control={signupForm.control}
                   name="name"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="font-mono text-xs uppercase">Callsign (Name)</FormLabel>
+                      <FormLabel className="font-mono text-xs uppercase">
+                        Callsign (Name)
+                      </FormLabel>
                       <FormControl>
                         <Input
-                          placeholder="Skywalker"
                           className="font-mono text-sm"
+                          placeholder="Skywalker"
                           {...field}
                         />
                       </FormControl>
@@ -225,11 +241,13 @@ export function AuthDialog({ children, defaultTab = "login" }: AuthDialogProps) 
                   name="email"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="font-mono text-xs uppercase">Email</FormLabel>
+                      <FormLabel className="font-mono text-xs uppercase">
+                        Email
+                      </FormLabel>
                       <FormControl>
                         <Input
-                          placeholder="pilot@rimfront.net"
                           className="font-mono text-sm"
+                          placeholder="pilot@rimfront.net"
                           {...field}
                         />
                       </FormControl>
@@ -242,11 +260,13 @@ export function AuthDialog({ children, defaultTab = "login" }: AuthDialogProps) 
                   name="password"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="font-mono text-xs uppercase">Password</FormLabel>
+                      <FormLabel className="font-mono text-xs uppercase">
+                        Password
+                      </FormLabel>
                       <FormControl>
                         <Input
-                          type="password"
                           className="font-mono text-sm"
+                          type="password"
                           {...field}
                         />
                       </FormControl>
@@ -255,11 +275,13 @@ export function AuthDialog({ children, defaultTab = "login" }: AuthDialogProps) 
                   )}
                 />
                 <Button
-                  type="submit"
-                  className="w-full font-sans bg-primary hover:bg-primary/90 text-primary-foreground rounded-none pixel-corners"
+                  className="pixel-corners w-full rounded-none bg-primary font-sans text-primary-foreground hover:bg-primary/90"
                   disabled={isLoading}
+                  type="submit"
                 >
-                  {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {isLoading && (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  )}
                   ENLIST
                 </Button>
               </form>

@@ -257,6 +257,7 @@ export default function GamePage() {
         selectedTroopId={selectedTroopId}
         staticMap={staticMap}
         troupes={troupes}
+        myPlayerId={myPlayer?._id}
       />
 
       {/* HUD */}

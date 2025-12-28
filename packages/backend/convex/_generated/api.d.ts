@@ -13,6 +13,7 @@ import type * as game from "../game.js";
 import type * as healthCheck from "../healthCheck.js";
 import type * as http from "../http.js";
 import type * as lib_mapgen from "../lib/mapgen.js";
+import type * as lib_pathfinding from "../lib/pathfinding.js";
 import type * as matchmaking from "../matchmaking.js";
 import type * as privateData from "../privateData.js";
 
@@ -28,6 +29,7 @@ declare const fullApi: ApiFromModules<{
   healthCheck: typeof healthCheck;
   http: typeof http;
   "lib/mapgen": typeof lib_mapgen;
+  "lib/pathfinding": typeof lib_pathfinding;
   matchmaking: typeof matchmaking;
   privateData: typeof privateData;
 }>;

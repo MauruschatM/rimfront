@@ -15,6 +15,79 @@ interface Node {
   parent: Node | null;
 }
 
+class MinHeap {
+  heap: Node[];
+
+  constructor() {
+    this.heap = [];
+  }
+
+  push(node: Node) {
+    this.heap.push(node);
+    this.bubbleUp(this.heap.length - 1);
+  }
+
+  pop(): Node | undefined {
+    if (this.heap.length === 0) return undefined;
+    const top = this.heap[0];
+    const bottom = this.heap.pop();
+    if (this.heap.length > 0 && bottom) {
+      this.heap[0] = bottom;
+      this.sinkDown(0);
+    }
+    return top;
+  }
+
+  size(): number {
+    return this.heap.length;
+  }
+
+  private bubbleUp(index: number) {
+    const node = this.heap[index];
+    while (index > 0) {
+      const parentIndex = Math.floor((index - 1) / 2);
+      const parent = this.heap[parentIndex];
+      if (node.f >= parent.f) break;
+      this.heap[parentIndex] = node;
+      this.heap[index] = parent;
+      index = parentIndex;
+    }
+    this.heap[index] = node;
+  }
+
+  private sinkDown(index: number) {
+    const length = this.heap.length;
+    const node = this.heap[index];
+    while (true) {
+      const leftChildIndex = 2 * index + 1;
+      const rightChildIndex = 2 * index + 2;
+      let swap = -1;
+
+      if (leftChildIndex < length) {
+        const leftChild = this.heap[leftChildIndex];
+        if (leftChild.f < node.f) {
+          swap = leftChildIndex;
+        }
+      }
+
+      if (rightChildIndex < length) {
+        const rightChild = this.heap[rightChildIndex];
+        if (
+          (swap === -1 && rightChild.f < node.f) ||
+          (swap !== -1 && rightChild.f < this.heap[swap].f)
+        ) {
+          swap = rightChildIndex;
+        }
+      }
+
+      if (swap === -1) break;
+      this.heap[index] = this.heap[swap];
+      this.heap[swap] = node;
+      index = swap;
+    }
+  }
+}
+
 /**
  * Creates a collision map from map dimensions, tiles (optional terrain cost), and buildings.
  * Returns a set of "blocked" strings "x,y" for O(1) lookup.
@@ -36,16 +109,63 @@ export function createCollisionMap(
     }
   }
 
-  // Block Terrain (optional, e.g., Water/Lava if tile IDs are known)
-  // Assuming simple walkable for now or just buildings block.
-  // If tiles are provided, could block specific IDs (e.g., Lava=7, Water=?)
-  // For now, only buildings block movement.
-
+  // Block Terrain (optional)
   return blocked;
 }
 
 /**
- * Finds a path using A*
+ * Finds the nearest walkable tile to the target using BFS.
+ */
+function findNearestWalkable(
+  target: Point,
+  width: number,
+  height: number,
+  blocked: Set<string>
+): Point | null {
+  // If target is not blocked, return it directly
+  if (!blocked.has(`${target.x},${target.y}`)) {
+    return target;
+  }
+
+  const queue: Point[] = [target];
+  const visited = new Set<string>();
+  visited.add(`${target.x},${target.y}`);
+
+  // Limit search to a small radius (e.g., 6 tiles) to find an entrance/edge
+  const MAX_SEARCH_STEPS = 100;
+  let steps = 0;
+
+  while (queue.length > 0 && steps < MAX_SEARCH_STEPS) {
+    const curr = queue.shift()!;
+    steps++;
+
+    if (!blocked.has(`${curr.x},${curr.y}`)) {
+      return curr;
+    }
+
+    const neighbors = [
+      { x: curr.x + 1, y: curr.y },
+      { x: curr.x - 1, y: curr.y },
+      { x: curr.x, y: curr.y + 1 },
+      { x: curr.x, y: curr.y - 1 },
+    ];
+
+    for (const n of neighbors) {
+      if (n.x >= 0 && n.x < width && n.y >= 0 && n.y < height) {
+        const key = `${n.x},${n.y}`;
+        if (!visited.has(key)) {
+          visited.add(key);
+          queue.push(n);
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Finds a path using A* with MinHeap and iteration limits.
  * @param start Start Point
  * @param end End Point
  * @param width Map Width
@@ -60,14 +180,18 @@ export function findPath(
   height: number,
   blocked: Set<string>
 ): Point[] | null {
-  // If start or end is blocked, return null (or handle nearest valid)
-  // For this game, if target is a building, the "target tile" is likely occupied by the building itself.
-  // We should path to an *adjacent* tile of the building, not inside it.
-  // But residents usually "enter" the building.
-  // So we treat the END tile as walkable even if in `blocked`.
+  // 1. Resolve effective target (handle blocked end)
+  const realEnd = findNearestWalkable(end, width, height, blocked);
+  if (!realEnd) {
+    // Could not find any walkable tile near target
+    return null;
+  }
 
-  const openList: Node[] = [];
+  const openList = new MinHeap();
   const closedSet = new Set<string>();
+
+  // Use a Map to track G scores to avoid searching the heap
+  const gScoreMap = new Map<string, number>();
 
   const startNode: Node = {
     x: start.x,
@@ -77,17 +201,28 @@ export function findPath(
     h: 0,
     parent: null,
   };
+
+  const startKey = `${start.x},${start.y}`;
+  gScoreMap.set(startKey, 0);
   openList.push(startNode);
 
-  const endKey = `${end.x},${end.y}`;
+  const endKey = `${realEnd.x},${realEnd.y}`;
 
-  while (openList.length > 0) {
-    // Sort by F (lowest first) - Optimization: MinHeap is better but array sort is okay for short paths
-    openList.sort((a, b) => a.f - b.f);
-    const currentNode = openList.shift()!;
+  // Limit iterations to prevent server freeze
+  let iterations = 0;
+  const MAX_ITERATIONS = 3000;
+
+  while (openList.size() > 0) {
+    iterations++;
+    if (iterations > MAX_ITERATIONS) {
+      // Path too complex or unreachable
+      return null;
+    }
+
+    const currentNode = openList.pop()!;
     const currentKey = `${currentNode.x},${currentNode.y}`;
 
-    if (currentNode.x === end.x && currentNode.y === end.y) {
+    if (currentNode.x === realEnd.x && currentNode.y === realEnd.y) {
       // Reconstruct path
       const path: Point[] = [];
       let curr: Node | null = currentNode;
@@ -119,38 +254,35 @@ export function findPath(
       )
         continue;
 
-      // Collision check (Ignore collision if it's the target tile - e.g. entering a door)
-      if (blocked.has(neighborKey) && neighborKey !== endKey) continue;
+      // Collision check
+      // Note: We already adjusted realEnd to be walkable, so we strictly check blocked
+      if (blocked.has(neighborKey)) continue;
 
       if (closedSet.has(neighborKey)) continue;
 
-      const gScore = currentNode.g + 1;
+      const tentativeG = currentNode.g + 1;
+      const existingG = gScoreMap.get(neighborKey);
 
-      // Check if already in open list with better G
-      const existingNode = openList.find(
-        (n) => n.x === neighbor.x && n.y === neighbor.y
-      );
-      if (existingNode && gScore >= existingNode.g) continue;
+      if (existingG !== undefined && tentativeG >= existingG) {
+        continue;
+      }
+
+      // Found a better path or new node
+      gScoreMap.set(neighborKey, tentativeG);
 
       const hScore =
-        Math.abs(neighbor.x - end.x) + Math.abs(neighbor.y - end.y); // Manhattan
+        Math.abs(neighbor.x - realEnd.x) + Math.abs(neighbor.y - realEnd.y); // Manhattan
+
       const newNode: Node = {
         x: neighbor.x,
         y: neighbor.y,
-        f: gScore + hScore,
-        g: gScore,
+        f: tentativeG + hScore,
+        g: tentativeG,
         h: hScore,
         parent: currentNode,
       };
 
-      if (existingNode) {
-        // Update existing
-        existingNode.g = gScore;
-        existingNode.f = gScore + hScore;
-        existingNode.parent = currentNode;
-      } else {
-        openList.push(newNode);
-      }
+      openList.push(newNode);
     }
   }
 

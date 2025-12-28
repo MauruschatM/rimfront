@@ -9,6 +9,7 @@ interface CameraManagerProps {
   maxZoom?: number;
   mapWidth: number;
   mapHeight: number;
+  flyTo?: { x: number; y: number; zoom?: number } | null;
 }
 
 export function CameraManager({
@@ -17,9 +18,14 @@ export function CameraManager({
   maxZoom = 50,
   mapWidth,
   mapHeight,
+  flyTo,
 }: CameraManagerProps) {
   const { camera, gl } = useThree();
   const keys = useRef<Set<string>>(new Set());
+  const isFlyingRef = useRef(false);
+  const flyTargetRef = useRef<{ x: number; y: number; zoom?: number } | null>(
+    null
+  );
 
   // Initialize camera to look straight down
   useEffect(() => {
@@ -27,6 +33,14 @@ export function CameraManager({
     camera.lookAt(camera.position.x, camera.position.y, 0);
     camera.updateProjectionMatrix();
   }, [camera]);
+
+  // Handle FlyTo Prop Changes
+  useEffect(() => {
+    if (flyTo) {
+      isFlyingRef.current = true;
+      flyTargetRef.current = flyTo;
+    }
+  }, [flyTo]);
 
   // Handle Keyboard Input
   useEffect(() => {
@@ -44,6 +58,56 @@ export function CameraManager({
 
   // Update loop for WASD movement
   useFrame((_, delta) => {
+    // 1. Handle Flying Animation
+    if (isFlyingRef.current && flyTargetRef.current) {
+      const target = flyTargetRef.current;
+      const speed = 3 * delta; // Interpolation speed
+
+      // Lerp Position
+      camera.position.x = THREE.MathUtils.lerp(
+        camera.position.x,
+        target.x,
+        speed
+      );
+      camera.position.y = THREE.MathUtils.lerp(
+        camera.position.y,
+        target.y,
+        speed
+      );
+
+      // Lerp Zoom (if specified)
+      if (target.zoom) {
+        camera.zoom = THREE.MathUtils.lerp(camera.zoom, target.zoom, speed);
+        camera.updateProjectionMatrix();
+      }
+
+      // Check completion distance
+      const dist = Math.sqrt(
+        (camera.position.x - target.x) ** 2 +
+          (camera.position.y - target.y) ** 2
+      );
+      // Stop if close enough
+      if (dist < 0.5 && (!target.zoom || Math.abs(camera.zoom - target.zoom) < 0.5)) {
+        isFlyingRef.current = false;
+        flyTargetRef.current = null;
+      }
+
+      // Clamp to bounds
+      camera.position.x = THREE.MathUtils.clamp(
+        camera.position.x,
+        0,
+        mapWidth
+      );
+      camera.position.y = THREE.MathUtils.clamp(
+        camera.position.y,
+        0,
+        mapHeight
+      );
+
+      return; // Skip WASD if flying
+    }
+
+    // 2. Handle WASD
     const speed = 50 * delta; // Base speed
     const boost = keys.current.has("ShiftLeft") ? 2 : 1;
     const moveSpeed = speed * boost;
@@ -52,14 +116,22 @@ export function CameraManager({
     let dx = 0;
     let dy = 0;
 
-    if (keys.current.has("KeyW") || keys.current.has("ArrowUp"))
+    if (keys.current.has("KeyW") || keys.current.has("ArrowUp")) {
       dy += moveSpeed;
-    if (keys.current.has("KeyS") || keys.current.has("ArrowDown"))
+      isFlyingRef.current = false; // Cancel flight on input
+    }
+    if (keys.current.has("KeyS") || keys.current.has("ArrowDown")) {
       dy -= moveSpeed;
-    if (keys.current.has("KeyA") || keys.current.has("ArrowLeft"))
+      isFlyingRef.current = false;
+    }
+    if (keys.current.has("KeyA") || keys.current.has("ArrowLeft")) {
       dx -= moveSpeed;
-    if (keys.current.has("KeyD") || keys.current.has("ArrowRight"))
+      isFlyingRef.current = false;
+    }
+    if (keys.current.has("KeyD") || keys.current.has("ArrowRight")) {
       dx += moveSpeed;
+      isFlyingRef.current = false;
+    }
 
     if (dx !== 0 || dy !== 0) {
       pos.x = THREE.MathUtils.clamp(pos.x + dx, 0, mapWidth);
@@ -75,6 +147,9 @@ export function CameraManager({
         // (event as any).preventDefault?.();
 
         if (down) {
+          // Cancel flight on drag
+          isFlyingRef.current = false;
+
           // Check if it's a real drag (threshold)
           if (Math.abs(mx) > 2 || Math.abs(my) > 2) {
             isDraggingRef.current = true;
@@ -115,6 +190,7 @@ export function CameraManager({
       },
       onWheel: ({ delta: [, dy], event }) => {
         event.preventDefault(); // Stop Safari browser zoom on trackpad pinch
+        isFlyingRef.current = false; // Cancel flight on zoom
 
         const zoomSpeed = 0.001;
         const newZoom = THREE.MathUtils.clamp(

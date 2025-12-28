@@ -17,6 +17,7 @@ import { useParams, useRouter } from "next/navigation";
 import * as React from "react";
 import { GameCanvas } from "@/components/game/GameCanvas";
 import { Button } from "@/components/ui/button";
+import { Vignette } from "@/components/ui/vignette";
 import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 
@@ -238,6 +239,7 @@ export default function GamePage() {
 
   return (
     <div className="relative h-screen w-full overflow-hidden bg-black">
+      <Vignette />
       <GameCanvas
         buildings={buildings}
         entities={entities}

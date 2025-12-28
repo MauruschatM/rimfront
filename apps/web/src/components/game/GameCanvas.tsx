@@ -1,12 +1,13 @@
 "use client";
 
 import { api } from "@packages/backend/convex/_generated/api";
-import { MapControls, Text } from "@react-three/drei";
+import { Text } from "@react-three/drei";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useMutation } from "convex/react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three"; // Keeping THREE namespace as it's cleaner for many types
 import { createPlanetPalette } from "@/lib/assets";
+import { CameraManager } from "./CameraManager";
 
 // --- Types ---
 
@@ -329,10 +330,12 @@ function UnitsRenderer({
   entities,
   selectedTroopId,
   onSelectTroop,
+  isDraggingRef,
 }: {
   entities: Entity[];
   selectedTroopId?: string | null;
   onSelectTroop?: (id: string | null) => void;
+  isDraggingRef?: React.MutableRefObject<boolean>;
 }) {
   const familiesRef = useRef<THREE.InstancedMesh>(null);
   const commandersRef = useRef<THREE.InstancedMesh>(null);
@@ -361,6 +364,7 @@ function UnitsRenderer({
       e: { stopPropagation: () => void; instanceId?: number },
       list: Entity[]
     ) => {
+      if (isDraggingRef?.current) return;
       if (!onSelectTroop) {
         return;
       }
@@ -373,7 +377,7 @@ function UnitsRenderer({
         }
       }
     },
-    [onSelectTroop]
+    [onSelectTroop, isDraggingRef]
   );
 
   useEffect(() => {
@@ -625,6 +629,7 @@ function InteractionPlane({
   selectedBuilding,
   selectedTroopId,
   onMoveTroop,
+  isDraggingRef,
 }: {
   game: any;
   width: number;
@@ -634,6 +639,7 @@ function InteractionPlane({
   selectedBuilding?: string | null;
   selectedTroopId?: string | null;
   onMoveTroop?: (x: number, y: number) => void;
+  isDraggingRef?: React.MutableRefObject<boolean>;
 }) {
   const { camera, raycaster } = useThree();
   const [hoverPos, setHoverPos] = useState<{
@@ -672,6 +678,7 @@ function InteractionPlane({
   const handleClick = useCallback(
     (e: { stopPropagation: () => void }) => {
       e.stopPropagation();
+      if (isDraggingRef?.current) return;
       if (hoverPos) {
         // Priority: Troop Move > Build > Base Place
         if (selectedTroopId && onMoveTroop) {
@@ -681,7 +688,7 @@ function InteractionPlane({
         }
       }
     },
-    [hoverPos, selectedTroopId, onMoveTroop, onClick]
+    [hoverPos, selectedTroopId, onMoveTroop, onClick, isDraggingRef]
   );
 
   // Cursor Visuals
@@ -768,6 +775,7 @@ export function GameCanvas({
   onMoveTroop,
 }: ExtendedGameCanvasProps) {
   const placeBase = useMutation(api.game.placeBase);
+  const isDraggingRef = useRef(false);
 
   const handlePlace = async (x: number, y: number) => {
     if (game.phase === "placement") {
@@ -801,13 +809,10 @@ export function GameCanvas({
       <ambientLight intensity={0.5} />
       <directionalLight intensity={1} position={[10, 10, 10]} />
 
-      <MapControls
-        enableRotate={false}
-        maxZoom={50}
-        minZoom={10}
-        panSpeed={0.5}
-        target={[staticMap.width / 2, staticMap.height / 2, 0]}
-        zoomSpeed={0.5}
+      <CameraManager
+        isDraggingRef={isDraggingRef}
+        mapHeight={staticMap.height}
+        mapWidth={staticMap.width}
       />
 
       <MapRenderer map={staticMap} />
@@ -817,6 +822,7 @@ export function GameCanvas({
       {entities && (
         <UnitsRenderer
           entities={entities}
+          isDraggingRef={isDraggingRef}
           onSelectTroop={onSelectTroop}
           selectedTroopId={selectedTroopId}
         />
@@ -829,6 +835,7 @@ export function GameCanvas({
         game={game}
         height={staticMap.height}
         isBuildMode={isBuildMode}
+        isDraggingRef={isDraggingRef}
         onClick={handlePlace}
         onMoveTroop={onMoveTroop}
         selectedBuilding={selectedBuilding}

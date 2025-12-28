@@ -1352,6 +1352,39 @@ export function GameCanvas({
 }: ExtendedGameCanvasProps) {
   const placeBase = useMutation(api.game.placeBase);
   const isDraggingRef = useRef(false);
+  const [flyTo, setFlyTo] = useState<{ x: number; y: number; zoom?: number } | null>(null);
+  const lastZoomedPhaseRef = useRef<string | null>(null);
+
+  // Handle Zoom Trigger
+  useEffect(() => {
+    // Check if we should zoom
+    // Condition: Phase is simulation AND we haven't zoomed for this phase session yet (or first load)
+    // Note: We want to zoom when phase BECOMES simulation.
+    // Also if we load directly into simulation.
+
+    // If we are in simulation, and we haven't handled this transition yet:
+    if (game.phase === "simulation" && lastZoomedPhaseRef.current !== "simulation" && myPlayerId) {
+      // Find my base
+      const myBase = buildings.find(b => b.ownerId === myPlayerId && b.type === "base_central");
+      if (myBase) {
+        // Calculate center
+        const cx = myBase.x + myBase.width / 2;
+        const cy = myBase.y + myBase.height / 2;
+
+        // Trigger fly
+        setFlyTo({ x: cx, y: cy, zoom: 40 }); // Higher zoom (40) as requested for close up
+
+        // Mark as handled
+        lastZoomedPhaseRef.current = "simulation";
+      }
+    } else if (game.phase !== "simulation") {
+        // Reset if we go back to lobby/placement (unlikely but good hygiene)
+        if (lastZoomedPhaseRef.current === "simulation") {
+            lastZoomedPhaseRef.current = null;
+        }
+    }
+  }, [game.phase, buildings, myPlayerId]);
+
 
   const handlePlace = async (x: number, y: number) => {
     if (game.phase === "placement") {
@@ -1392,6 +1425,7 @@ export function GameCanvas({
       <directionalLight intensity={1} position={[10, 10, 10]} />
 
       <CameraManager
+        flyTo={flyTo}
         isDraggingRef={isDraggingRef}
         mapHeight={staticMap.height}
         mapWidth={staticMap.width}

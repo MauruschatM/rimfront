@@ -65,7 +65,7 @@ export function generateMap(planetType: string, width: number, height: number) {
 
           // Chance for Structures (Rocks)
           if (Math.random() < 0.005 && tileId !== TILES.EMPTY) {
-             structures.push({ x, y, type: "rock_large", width: 2, height: 2 });
+            structures.push({ x, y, type: "rock_large", width: 2, height: 2 });
           }
           break;
 
@@ -74,7 +74,7 @@ export function generateMap(planetType: string, width: number, height: number) {
           else tileId = TILES.SNOW;
 
           if (Math.random() < 0.002 && tileId !== TILES.EMPTY) {
-             structures.push({ x, y, type: "ice_spike", width: 1, height: 2 });
+            structures.push({ x, y, type: "ice_spike", width: 1, height: 2 });
           }
           break;
 
@@ -82,8 +82,9 @@ export function generateMap(planetType: string, width: number, height: number) {
           if (val > 0.2) tileId = TILES.GRASS;
           else tileId = TILES.DIRT;
 
-          if (Math.random() < 0.02 && tileId !== TILES.EMPTY) { // High density trees
-             structures.push({ x, y, type: "tree_huge", width: 2, height: 3 });
+          if (Math.random() < 0.02 && tileId !== TILES.EMPTY) {
+            // High density trees
+            structures.push({ x, y, type: "tree_huge", width: 2, height: 3 });
           }
           break;
 
@@ -92,8 +93,18 @@ export function generateMap(planetType: string, width: number, height: number) {
           else if (val < -0.3) tileId = TILES.LAVA;
           else tileId = TILES.DIRT; // Ashy dirt
 
-          if (Math.random() < 0.005 && tileId !== TILES.LAVA && tileId !== TILES.EMPTY) {
-             structures.push({ x, y, type: "obsidian_rock", width: 2, height: 2 });
+          if (
+            Math.random() < 0.005 &&
+            tileId !== TILES.LAVA &&
+            tileId !== TILES.EMPTY
+          ) {
+            structures.push({
+              x,
+              y,
+              type: "obsidian_rock",
+              width: 2,
+              height: 2,
+            });
           }
           break;
 

@@ -10,6 +10,7 @@ import {
   Hammer,
   Loader2,
   Shield,
+  Trophy,
   Users,
 } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
@@ -126,6 +127,24 @@ export default function GamePage() {
     players[0];
   const credits = myPlayer?.credits || 0;
 
+  // Score Calculation
+  const calculateScore = (player: any) => {
+    if (!player) return 0;
+    const playerCredits = player.credits || 0;
+    let buildingScore = 0;
+    for (const b of buildings) {
+      if (b.ownerId === player._id) {
+        if (b.type === "house") buildingScore += 2000;
+        else if (b.type === "workshop") buildingScore += 4000;
+        else if (b.type === "barracks") buildingScore += 4000;
+        else if (b.type === "base_central") buildingScore += 10_000;
+      }
+    }
+    return playerCredits + buildingScore;
+  };
+
+  const myScore = calculateScore(myPlayer);
+
   // Inflation
   const myBuildingsCount = buildings.filter(
     (b) => b.ownerId === myPlayer?._id && b.type !== "base_central"
@@ -231,6 +250,19 @@ export default function GamePage() {
         </div>
 
         <div className="flex gap-4">
+          {/* Score Display */}
+          <div className="pixel-corners flex min-w-[100px] flex-col items-center border border-white/20 bg-black/50 p-2 text-white">
+            <div className="flex items-center gap-2 text-green-400">
+              <Trophy className="h-4 w-4" />
+              <span className="font-bold font-mono text-xl">
+                {myScore.toLocaleString()}
+              </span>
+            </div>
+            <div className="font-mono text-[10px] text-muted-foreground uppercase">
+              Score
+            </div>
+          </div>
+
           <div className="pixel-corners flex min-w-[100px] flex-col items-center border border-white/20 bg-black/50 p-2 text-white">
             <div className="flex items-center gap-2 text-yellow-400">
               <Coins className="h-4 w-4" />
@@ -351,45 +383,47 @@ export default function GamePage() {
 
       {/* Controls */}
       <div className="pointer-events-auto absolute bottom-4 left-1/2 flex -translate-x-1/2 gap-4">
-        {game.phase === "simulation" && (
-          <>
-            <Button
-              className={cn(
-                "pixel-corners min-w-[120px] font-mono",
-                mode === "build" && "border-2 border-yellow-400"
-              )}
-              onClick={() => {
-                setMode(mode === "build" ? "none" : "build");
-                if (mode !== "build") setSelectedBuilding("house");
-              }}
-              variant={mode === "build" ? "default" : "secondary"}
-            >
-              <Hammer className="mr-2 h-4 w-4" />
-              {mode === "build" ? "CLOSE" : "BUILD MODE"}
-            </Button>
+        {game.phase === "simulation" &&
+          myPlayer?.status !== "eliminated" &&
+          myPlayer?.status !== "spectator" && (
+            <>
+              <Button
+                className={cn(
+                  "pixel-corners min-w-[120px] font-mono",
+                  mode === "build" && "border-2 border-yellow-400"
+                )}
+                onClick={() => {
+                  setMode(mode === "build" ? "none" : "build");
+                  if (mode !== "build") setSelectedBuilding("house");
+                }}
+                variant={mode === "build" ? "default" : "secondary"}
+              >
+                <Hammer className="mr-2 h-4 w-4" />
+                {mode === "build" ? "CLOSE" : "BUILD MODE"}
+              </Button>
 
-            <Button
-              className={cn(
-                "pixel-corners min-w-[120px] font-mono",
-                mode === "defense" && "border-2 border-red-500"
-              )}
-              onClick={() => {
-                setMode(mode === "defense" ? "none" : "defense");
-                if (
-                  mode !== "defense" &&
-                  !selectedTroopId &&
-                  myTroops.length > 0
-                ) {
-                  setSelectedTroopId(myTroops[0]._id);
-                }
-              }}
-              variant={mode === "defense" ? "default" : "secondary"}
-            >
-              <Shield className="mr-2 h-4 w-4" />
-              {mode === "defense" ? "CLOSE" : "DEFENSE MODE"}
-            </Button>
-          </>
-        )}
+              <Button
+                className={cn(
+                  "pixel-corners min-w-[120px] font-mono",
+                  mode === "defense" && "border-2 border-red-500"
+                )}
+                onClick={() => {
+                  setMode(mode === "defense" ? "none" : "defense");
+                  if (
+                    mode !== "defense" &&
+                    !selectedTroopId &&
+                    myTroops.length > 0
+                  ) {
+                    setSelectedTroopId(myTroops[0]._id);
+                  }
+                }}
+                variant={mode === "defense" ? "default" : "secondary"}
+              >
+                <Shield className="mr-2 h-4 w-4" />
+                {mode === "defense" ? "CLOSE" : "DEFENSE MODE"}
+              </Button>
+            </>
+          )}
       </div>
 
       <div className="pointer-events-auto absolute right-4 bottom-4">
@@ -419,6 +453,89 @@ export default function GamePage() {
           <div className="pixel-corners flex items-center gap-2 bg-black/50 p-2 text-red-500">
             <Crosshair className="h-4 w-4 animate-pulse" />
             <span className="font-mono text-xs">SELECT TARGET TO MOVE</span>
+          </div>
+        </div>
+      )}
+
+      {/* Eliminated Spectator Overlay */}
+      {(myPlayer?.status === "eliminated" ||
+        myPlayer?.status === "spectator") && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <div className="pixel-corners border-2 border-red-500 bg-black/80 p-6 text-center text-red-500">
+            <h1 className="mb-2 font-bold font-mono text-4xl">ELIMINATED</h1>
+            <p className="font-mono text-sm">YOU ARE NOW SPECTATING</p>
+            {myPlayer.eliminatedBy && (
+              <p className="mt-2 font-mono text-white text-xs">
+                Eliminated by{" "}
+                {players.find((p) => p._id === myPlayer.eliminatedBy)?.name ||
+                  "Unknown"}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* End Game Screen */}
+      {game.status === "ended" && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/90">
+          <div className="pixel-corners flex min-w-[500px] flex-col items-center border-2 border-primary bg-background p-8">
+            <h1
+              className={cn(
+                "mb-8 font-bold font-mono text-6xl",
+                myScore === Math.max(...players.map(calculateScore))
+                  ? "text-yellow-400"
+                  : "text-red-500"
+              )}
+            >
+              {myScore === Math.max(...players.map(calculateScore))
+                ? "VICTORY"
+                : "DEFEAT"}
+            </h1>
+
+            <div className="mb-8 w-full">
+              <h3 className="mb-4 border-white/20 border-b pb-2 font-mono text-white text-xl">
+                LEADERBOARD
+              </h3>
+              <div className="flex flex-col gap-2">
+                {players
+                  .map((p) => ({
+                    ...p,
+                    score: calculateScore(p),
+                  }))
+                  .sort((a, b) => b.score - a.score)
+                  .map((p, i) => (
+                    <div
+                      className={cn(
+                        "flex items-center justify-between p-2 font-mono",
+                        p._id === myPlayer._id
+                          ? "bg-primary/20 text-primary"
+                          : "text-white"
+                      )}
+                      key={p._id}
+                    >
+                      <div className="flex items-center gap-4">
+                        <span className="w-6 text-muted-foreground">
+                          #{i + 1}
+                        </span>
+                        <span>{p.name}</span>
+                        {p.status === "eliminated" && (
+                          <span className="text-red-500 text-xs">(DEAD)</span>
+                        )}
+                      </div>
+                      <span className="font-bold">
+                        {p.score.toLocaleString()}
+                      </span>
+                    </div>
+                  ))}
+              </div>
+            </div>
+
+            <Button
+              className="pixel-corners w-full font-mono"
+              onClick={handleEndGame}
+            >
+              RETURN TO LOBBY
+            </Button>
           </div>
         </div>
       )}

@@ -85,14 +85,16 @@
 
 .dark {
   /* Star Wars/Space Theme Colors - Dark Mode (Deep Space) */
-  --background: oklch(0.10 0 0);
-  --foreground: oklch(0.985 0 0); /* Gold/Yellowish for text is classic Star Wars but white is better for readability */
+  --background: oklch(0.1 0 0);
+  --foreground: oklch(
+    0.985 0 0
+  ); /* Gold/Yellowish for text is classic Star Wars but white is better for readability */
   --card: oklch(0.15 0 0);
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.15 0 0);
   --popover-foreground: oklch(0.985 0 0);
   --primary: oklch(0.85 0.15 85); /* Gold */
-  --primary-foreground: oklch(0.10 0 0);
+  --primary-foreground: oklch(0.1 0 0);
   --secondary: oklch(0.25 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.25 0 0);
@@ -111,7 +113,7 @@
   --sidebar: oklch(0.15 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.85 0.15 85);
-  --sidebar-primary-foreground: oklch(0.10 0 0);
+  --sidebar-primary-foreground: oklch(0.1 0 0);
   --sidebar-accent: oklch(0.25 0 0);
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(0.3 0 0);
@@ -150,10 +152,18 @@
   /* Pixel Art Utilities */
   .pixel-corners {
     clip-path: polygon(
-      0px 4px, 4px 4px, 4px 0px,
-      calc(100% - 4px) 0px, calc(100% - 4px) 4px, 100% 4px,
-      100% calc(100% - 4px), calc(100% - 4px) calc(100% - 4px), calc(100% - 4px) 100%,
-      4px 100%, 4px calc(100% - 4px), 0px calc(100% - 4px)
+      0px 4px,
+      4px 4px,
+      4px 0px,
+      calc(100% - 4px) 0px,
+      calc(100% - 4px) 4px,
+      100% 4px,
+      100% calc(100% - 4px),
+      calc(100% - 4px) calc(100% - 4px),
+      calc(100% - 4px) 100%,
+      4px 100%,
+      4px calc(100% - 4px),
+      0px calc(100% - 4px)
     );
   }
 

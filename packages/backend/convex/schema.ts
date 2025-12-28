@@ -46,6 +46,8 @@ export default defineSchema({
     teamId: v.optional(v.id("teams")),
     hasPlacedBase: v.optional(v.boolean()),
     credits: v.number(),
+    status: v.optional(v.string()), // "active", "eliminated", "spectator"
+    eliminatedBy: v.optional(v.id("players")),
   }),
   maps: defineTable({
     gameId: v.id("games"),

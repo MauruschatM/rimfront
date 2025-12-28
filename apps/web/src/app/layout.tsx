@@ -35,11 +35,11 @@ export default async function RootLayout({
   const token = await getToken();
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${geistSans.variable} ${geistMono.variable} ${pressStart2P.variable} antialiased`}>
+      <body
+        className={`${geistSans.variable} ${geistMono.variable} ${pressStart2P.variable} antialiased`}
+      >
         <Providers initialToken={token}>
-          <div className="h-svh">
-            {children}
-          </div>
+          <div className="h-svh">{children}</div>
         </Providers>
       </body>
     </html>

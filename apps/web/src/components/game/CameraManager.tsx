@@ -1,6 +1,6 @@
-import { useGesture } from "@use-gesture/react";
 import { useFrame, useThree } from "@react-three/fiber";
-import { MutableRefObject, useEffect, useRef } from "react";
+import { useGesture } from "@use-gesture/react";
+import { type MutableRefObject, useEffect, useRef } from "react";
 import * as THREE from "three";
 
 interface CameraManagerProps {
@@ -45,10 +45,14 @@ export function CameraManager({
     let dx = 0;
     let dy = 0;
 
-    if (keys.current.has("KeyW") || keys.current.has("ArrowUp")) dy += moveSpeed;
-    if (keys.current.has("KeyS") || keys.current.has("ArrowDown")) dy -= moveSpeed;
-    if (keys.current.has("KeyA") || keys.current.has("ArrowLeft")) dx -= moveSpeed;
-    if (keys.current.has("KeyD") || keys.current.has("ArrowRight")) dx += moveSpeed;
+    if (keys.current.has("KeyW") || keys.current.has("ArrowUp"))
+      dy += moveSpeed;
+    if (keys.current.has("KeyS") || keys.current.has("ArrowDown"))
+      dy -= moveSpeed;
+    if (keys.current.has("KeyA") || keys.current.has("ArrowLeft"))
+      dx -= moveSpeed;
+    if (keys.current.has("KeyD") || keys.current.has("ArrowRight"))
+      dx += moveSpeed;
 
     if (dx !== 0 || dy !== 0) {
       pos.x = THREE.MathUtils.clamp(pos.x + dx, 0, mapWidth);
@@ -66,8 +70,8 @@ export function CameraManager({
         if (down) {
           // Check if it's a real drag (threshold)
           if (Math.abs(mx) > 2 || Math.abs(my) > 2) {
-             isDraggingRef.current = true;
-             document.body.style.cursor = "grabbing";
+            isDraggingRef.current = true;
+            document.body.style.cursor = "grabbing";
           }
 
           // Move camera
@@ -80,8 +84,16 @@ export function CameraManager({
           camera.position.y += dy / zoom;
 
           // Clamp
-          camera.position.x = THREE.MathUtils.clamp(camera.position.x, 0, mapWidth);
-          camera.position.y = THREE.MathUtils.clamp(camera.position.y, 0, mapHeight);
+          camera.position.x = THREE.MathUtils.clamp(
+            camera.position.x,
+            0,
+            mapWidth
+          );
+          camera.position.y = THREE.MathUtils.clamp(
+            camera.position.y,
+            0,
+            mapHeight
+          );
         } else {
           // Drag released
           document.body.style.cursor = "default";
@@ -90,7 +102,7 @@ export function CameraManager({
           // Resetting it usually happens in the click handler or after a delay.
           // However, for safety, let's reset it after a microtask if not done elsewhere.
           setTimeout(() => {
-             isDraggingRef.current = false;
+            isDraggingRef.current = false;
           }, 50);
         }
       },
@@ -105,71 +117,71 @@ export function CameraManager({
         );
 
         if (newZoom !== camera.zoom) {
-           // Zoom towards cursor logic
-           // 1. Get world point under cursor BEFORE zoom
+          // Zoom towards cursor logic
+          // 1. Get world point under cursor BEFORE zoom
 
-           // Normalize mouse position relative to canvas
-           const rect = gl.domElement.getBoundingClientRect();
-           const clientX = (event as WheelEvent).clientX;
-           const clientY = (event as WheelEvent).clientY;
+          // Normalize mouse position relative to canvas
+          const rect = gl.domElement.getBoundingClientRect();
+          const clientX = (event as WheelEvent).clientX;
+          const clientY = (event as WheelEvent).clientY;
 
-           const pointer = new THREE.Vector2(
-             ((clientX - rect.left) / rect.width) * 2 - 1,
-             -((clientY - rect.top) / rect.height) * 2 + 1
-           );
+          const pointer = new THREE.Vector2(
+            ((clientX - rect.left) / rect.width) * 2 - 1,
+            -((clientY - rect.top) / rect.height) * 2 + 1
+          );
 
-           // Raycast to find where mouse hits the z=0 plane
-           // Ideally we simply unproject.
-           const vector = new THREE.Vector3(pointer.x, pointer.y, 0);
-           vector.unproject(camera);
+          // Raycast to find where mouse hits the z=0 plane
+          // Ideally we simply unproject.
+          const vector = new THREE.Vector3(pointer.x, pointer.y, 0);
+          vector.unproject(camera);
 
-           // For Orthographic camera looking down Z:
-           // World X = Camera X + (NDC X / Zoom) * (Width/2) ... roughly
-           // Easier way:
-           // The point under the mouse in world space is P.
-           // Relative to camera, P_cam = P - CameraPos.
-           // When zooming, we want P to stay at the same screen coordinate.
-           // Screen coord S = (P - CameraPos) * Zoom.
-           // We want S_new = S_old.
-           // (P - CameraPos_new) * Zoom_new = (P - CameraPos_old) * Zoom_old
-           // P - CameraPos_new = (P - CameraPos_old) * (Zoom_old / Zoom_new)
-           // CameraPos_new = P - (P - CameraPos_old) * (Zoom_old / Zoom_new)
+          // For Orthographic camera looking down Z:
+          // World X = Camera X + (NDC X / Zoom) * (Width/2) ... roughly
+          // Easier way:
+          // The point under the mouse in world space is P.
+          // Relative to camera, P_cam = P - CameraPos.
+          // When zooming, we want P to stay at the same screen coordinate.
+          // Screen coord S = (P - CameraPos) * Zoom.
+          // We want S_new = S_old.
+          // (P - CameraPos_new) * Zoom_new = (P - CameraPos_old) * Zoom_old
+          // P - CameraPos_new = (P - CameraPos_old) * (Zoom_old / Zoom_new)
+          // CameraPos_new = P - (P - CameraPos_old) * (Zoom_old / Zoom_new)
 
-           // Let's implement this math.
+          // Let's implement this math.
 
-           // Current World Position under Mouse (assuming Z=0 plane)
-           // pointer.x is -1 to 1.
-           // For Orthographic:
-           // WorldX = CamX + (pointer.x * (gl.domElement.width / 2)) / Zoom
-           // Actually simpler:
-           // The viewport width in world units is (ScreenW / Zoom).
-           // Mouse offset from center in world units is (pointer.x * (ScreenW / 2) / Zoom).
+          // Current World Position under Mouse (assuming Z=0 plane)
+          // pointer.x is -1 to 1.
+          // For Orthographic:
+          // WorldX = CamX + (pointer.x * (gl.domElement.width / 2)) / Zoom
+          // Actually simpler:
+          // The viewport width in world units is (ScreenW / Zoom).
+          // Mouse offset from center in world units is (pointer.x * (ScreenW / 2) / Zoom).
 
-           const screenWidth = gl.domElement.width; // drawing buffer width
-           const screenHeight = gl.domElement.height;
+          const screenWidth = gl.domElement.width; // drawing buffer width
+          const screenHeight = gl.domElement.height;
 
-           // pointer.x is normalized (-1 to 1) relative to canvas
-           // But useGesture gives us clientX/Y. Let's use the pointer from useThree if available,
-           // but event is more accurate for the exact wheel moment.
+          // pointer.x is normalized (-1 to 1) relative to canvas
+          // But useGesture gives us clientX/Y. Let's use the pointer from useThree if available,
+          // but event is more accurate for the exact wheel moment.
 
-           // Let's use three.js unproject logic which is robust.
-           const vec = new THREE.Vector3(pointer.x, pointer.y, 0);
-           vec.unproject(camera);
-           const mouseWorldX = vec.x;
-           const mouseWorldY = vec.y;
+          // Let's use three.js unproject logic which is robust.
+          const vec = new THREE.Vector3(pointer.x, pointer.y, 0);
+          vec.unproject(camera);
+          const mouseWorldX = vec.x;
+          const mouseWorldY = vec.y;
 
-           const scale = camera.zoom / newZoom;
+          const scale = camera.zoom / newZoom;
 
-           const camX = camera.position.x;
-           const camY = camera.position.y;
+          const camX = camera.position.x;
+          const camY = camera.position.y;
 
-           const newCamX = mouseWorldX - (mouseWorldX - camX) * scale;
-           const newCamY = mouseWorldY - (mouseWorldY - camY) * scale;
+          const newCamX = mouseWorldX - (mouseWorldX - camX) * scale;
+          const newCamY = mouseWorldY - (mouseWorldY - camY) * scale;
 
-           camera.zoom = newZoom;
-           camera.position.x = THREE.MathUtils.clamp(newCamX, 0, mapWidth);
-           camera.position.y = THREE.MathUtils.clamp(newCamY, 0, mapHeight);
-           camera.updateProjectionMatrix();
+          camera.zoom = newZoom;
+          camera.position.x = THREE.MathUtils.clamp(newCamX, 0, mapWidth);
+          camera.position.y = THREE.MathUtils.clamp(newCamY, 0, mapHeight);
+          camera.updateProjectionMatrix();
         }
       },
     },
@@ -177,9 +189,9 @@ export function CameraManager({
       target: gl.domElement,
       eventOptions: { passive: false },
       drag: {
-         filterTaps: true, // helps distinguish clicks
-         threshold: 5,
-      }
+        filterTaps: true, // helps distinguish clicks
+        threshold: 5,
+      },
     }
   );
 

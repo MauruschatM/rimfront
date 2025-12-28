@@ -27,6 +27,81 @@ interface Building {
   height: number;
   health: number;
   constructionEnd?: number;
+  captureStart?: number;
+  capturingOwnerId?: string;
+}
+
+async function eliminatePlayer(
+  ctx: any,
+  gameId: Id<"games">,
+  victimId: Id<"players">,
+  conquerorId: Id<"players">
+) {
+  const victim = await ctx.db.get(victimId);
+  const conqueror = await ctx.db.get(conquerorId);
+  if (!(victim && conqueror)) return;
+
+  // 1. Transfer Credits
+  const loot = victim.credits;
+  await ctx.db.patch(conquerorId, { credits: (conqueror.credits || 0) + loot });
+  await ctx.db.patch(victimId, {
+    credits: 0,
+    status: "eliminated",
+    eliminatedBy: conquerorId,
+  });
+
+  // 2. Transfer Buildings
+  const mapDoc = await ctx.db
+    .query("maps")
+    .withIndex("by_gameId", (q: any) => q.eq("gameId", gameId))
+    .first();
+
+  if (mapDoc) {
+    const newBuildings = mapDoc.buildings.map((b: Building) => {
+      if (b.ownerId === victimId) {
+        return {
+          ...b,
+          ownerId: conquerorId,
+          captureStart: undefined,
+          capturingOwnerId: undefined,
+        };
+      }
+      return b;
+    });
+    await ctx.db.patch(mapDoc._id, { buildings: newBuildings });
+  }
+
+  // 3. Transfer Entities, Families, Troops
+  const entities = await ctx.db
+    .query("entities")
+    .withIndex("by_gameId", (q: any) => q.eq("gameId", gameId))
+    .collect();
+
+  for (const e of entities) {
+    if (e.ownerId === victimId) {
+      await ctx.db.patch(e._id, { ownerId: conquerorId });
+    }
+  }
+
+  const families = await ctx.db
+    .query("families")
+    .withIndex("by_gameId", (q: any) => q.eq("gameId", gameId))
+    .collect();
+  for (const f of families) {
+    if (f.ownerId === victimId) {
+      await ctx.db.patch(f._id, { ownerId: conquerorId });
+    }
+  }
+
+  const troupes = await ctx.db
+    .query("troups")
+    .withIndex("by_gameId", (q: any) => q.eq("gameId", gameId))
+    .collect();
+  for (const t of troupes) {
+    if (t.ownerId === victimId) {
+      await ctx.db.patch(t._id, { ownerId: conquerorId });
+    }
+  }
 }
 
 // Interface for structures (rocks, trees, etc.)
@@ -968,7 +1043,7 @@ export const endPlacementPhase = internalMutation({
       await ctx.db.patch(game._id, {
         phase: "simulation",
         phaseStart: Date.now(),
-        phaseEnd: undefined,
+        phaseEnd: Date.now() + 30 * 60 * 1000, // 30 Minutes
       });
 
       await ctx.scheduler.runAfter(0, internal.game.tick, { gameId: game._id });
@@ -984,20 +1059,105 @@ export const tick = internalMutation({
       return;
 
     const now = Date.now();
+
+    // 1. Timer & End Game Check
+    if (game.phaseEnd && now > game.phaseEnd) {
+      await ctx.db.patch(game._id, { status: "ended" });
+      return;
+    }
+
     const mapDoc = await ctx.db
       .query("maps")
       .withIndex("by_gameId", (q) => q.eq("gameId", args.gameId))
       .first();
     if (!mapDoc) return;
 
-    const players = (await ctx.db
-      .query("players")
-      .filter((q) => q.eq(q.field("gameId"), args.gameId))
-      .collect()) as Player[];
     const entities = (await ctx.db
       .query("entities")
       .withIndex("by_gameId", (q) => q.eq("gameId", args.gameId))
       .collect()) as Entity[];
+
+    // 2. Capture Logic
+    let mapDirty = false;
+    const pendingEliminations: {
+      victimId: Id<"players">;
+      conquerorId: Id<"players">;
+    }[] = [];
+
+    // Filter units that can capture (e.g. soldiers, commanders)
+    const combatUnits = entities.filter(
+      (e) => (e.type === "soldier" || e.type === "commander") && !e.isInside
+    );
+
+    for (const b of mapDoc.buildings) {
+      if (b.type === "base_central") {
+        // Find enemy units near base (1 tile range = distance < 2? No, 1 tile means adjacent)
+        // Base is 5x5. Units at x,y.
+        // Base Zone: x to x+width, y to y+height.
+        // Range 1 means: x-1 to x+width+1, y-1 to y+height+1.
+
+        let capturingPlayerId: string | null = null;
+        let ownerDefending = false;
+
+        // Check for units in range
+        for (const unit of combatUnits) {
+          if (
+            unit.x >= b.x - 1 &&
+            unit.x <= b.x + b.width && // x + width is exclusive usually, but let's be generous: <= x+width is effectively +1 tile right
+            unit.y >= b.y - 1 &&
+            unit.y <= b.y + b.height
+          ) {
+            if (unit.ownerId === b.ownerId) {
+              ownerDefending = true;
+            } else {
+              // Found enemy
+              // If multiple enemies from different teams, first one found wins priority?
+              // Simplifying: Last one found sets capturing ID, or we check distinct teams.
+              // For now, assume first enemy detected starts capture.
+              if (!capturingPlayerId) capturingPlayerId = unit.ownerId;
+            }
+          }
+        }
+
+        if (capturingPlayerId && !ownerDefending) {
+          // Capture in progress
+          if (b.capturingOwnerId === capturingPlayerId) {
+            // Continue capture
+            if (b.captureStart && now - b.captureStart >= 30_000) {
+              // Trigger Elimination
+              pendingEliminations.push({
+                victimId: b.ownerId as Id<"players">,
+                conquerorId: capturingPlayerId as Id<"players">,
+              });
+              b.captureStart = undefined;
+              b.capturingOwnerId = undefined;
+              mapDirty = true;
+            }
+          } else {
+            // Start new capture
+            b.capturingOwnerId = capturingPlayerId;
+            b.captureStart = now;
+            mapDirty = true;
+          }
+        } else {
+          // Reset if defended or no enemies
+          if (b.captureStart || b.capturingOwnerId) {
+            b.captureStart = undefined;
+            b.capturingOwnerId = undefined;
+            mapDirty = true;
+          }
+        }
+      }
+    }
+
+    if (mapDirty) {
+      await ctx.db.patch(mapDoc._id, { buildings: mapDoc.buildings });
+    }
+
+    const players = (await ctx.db
+      .query("players")
+      .filter((q) => q.eq(q.field("gameId"), args.gameId))
+      .collect()) as Player[];
     const families = (await ctx.db
       .query("families")
       .withIndex("by_gameId", (q) => q.eq("gameId", args.gameId))
@@ -1056,6 +1216,11 @@ export const tick = internalMutation({
       if (gain > 0) {
         await ctx.db.patch(p._id, { credits: (p.credits || 0) + gain });
       }
+    }
+
+    // Execute Pending Eliminations
+    for (const elim of pendingEliminations) {
+      await eliminatePlayer(ctx, args.gameId, elim.victimId, elim.conquerorId);
     }
 
     await ctx.scheduler.runAfter(5000, internal.game.tick, {

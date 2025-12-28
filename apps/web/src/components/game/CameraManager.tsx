@@ -21,6 +21,13 @@ export function CameraManager({
   const { camera, gl } = useThree();
   const keys = useRef<Set<string>>(new Set());
 
+  // Initialize camera to look straight down
+  useEffect(() => {
+    camera.up.set(0, 1, 0);
+    camera.lookAt(camera.position.x, camera.position.y, 0);
+    camera.updateProjectionMatrix();
+  }, [camera]);
+
   // Handle Keyboard Input
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => keys.current.add(e.code);
@@ -107,7 +114,7 @@ export function CameraManager({
         }
       },
       onWheel: ({ delta: [, dy], event }) => {
-        // event.preventDefault(); // Stop page scrolling
+        event.preventDefault(); // Stop Safari browser zoom on trackpad pinch
 
         const zoomSpeed = 0.001;
         const newZoom = THREE.MathUtils.clamp(

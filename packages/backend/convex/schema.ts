@@ -56,6 +56,7 @@ export default defineSchema({
     teamId: v.optional(v.id("teams")),
     hasPlacedBase: v.optional(v.boolean()),
     credits: v.number(),
+    inflation: v.number(), // Current inflation multiplier (min 1.0, doubles on build, decays -0.1/round)
     status: v.optional(v.string()), // "active", "eliminated", "spectator"
     eliminatedBy: v.optional(v.id("players")),
   }),
@@ -82,6 +83,7 @@ export default defineSchema({
     gameId: v.id("games"),
     homeId: v.string(), // ID from map.buildings
     ownerId: v.id("players"),
+    lastSpawnTime: v.optional(v.number()), // Timestamp of last member spawn
   }).index("by_gameId", ["gameId"]),
   troups: defineTable({
     gameId: v.id("games"),

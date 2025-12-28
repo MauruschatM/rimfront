@@ -23,6 +23,12 @@ const TICKS_PER_ROUND = 50; // 50 ticks = 5 seconds = 1 round
 // Movement: 8 ticks to traverse one tile = 800ms per tile
 const TICKS_PER_TILE = 8;
 
+// Factory capacity for reservation system
+const FACTORY_CAPACITY = 16;
+
+// Spawn interval: 30 seconds for both residents and soldiers
+const SPAWN_INTERVAL_MS = 30_000;
+
 // Interface for buildings stored in map
 interface Building {
   id: string;
@@ -161,14 +167,16 @@ type Family = {
   gameId: Id<"games">;
   homeId: string;
   ownerId: Id<"players">;
+  lastSpawnTime?: number;
 };
 
 type Player = {
   _id: Id<"players">;
   gameId: Id<"games">;
-  userId: string;
+  userId?: string;
   credits: number;
   isBot?: boolean;
+  status?: string;
 };
 
 /**
@@ -290,15 +298,33 @@ function findRandomBasePosition(
   return { x: candidates[0].x, y: candidates[0].y };
 }
 
+/**
+ * Checks if this is the first building of a specific type for a player.
+ */
+function isFirstBuildingOfType(
+  existingBuildings: any[],
+  playerId: string,
+  buildingType: string
+): boolean {
+  return !existingBuildings.some(
+    (b) => b.ownerId === playerId && b.type === buildingType
+  );
+}
+
 function calculateBuildingCost(
   baseCost: number,
   existingBuildings: any[],
-  playerId: string
+  playerId: string,
+  buildingType: string,
+  playerInflation: number // Player's stored inflation value
 ): number {
-  const count = existingBuildings.filter(
-    (b) => b.ownerId === playerId && b.type !== "base_central"
-  ).length;
-  return baseCost * 2 ** count;
+  // First building of each type is free
+  if (isFirstBuildingOfType(existingBuildings, playerId, buildingType)) {
+    return 0;
+  }
+
+  // Use player's stored inflation instead of calculating it
+  return Math.floor(baseCost * playerInflation);
 }
 
 // --- Helper: Spatial Hash ---
@@ -407,7 +433,7 @@ function handleWalking(
         member.workplaceId = member.targetWorkshopId;
         member.targetWorkshopId = undefined;
         member.isInside = true;
-        member.stateEnd = now + 60_000 + Math.random() * 30_000;
+        member.stateEnd = now + 15_000 + Math.random() * 10_000;
         return true;
       }
       member.targetWorkshopId = undefined;
@@ -425,7 +451,7 @@ function handleWalking(
         member.state = "sleeping";
         member.targetHomeId = undefined;
         member.isInside = true;
-        member.stateEnd = now + 30_000 + Math.random() * 10_000;
+        member.stateEnd = now + 20_000 + Math.random() * 10_000;
         return true;
       }
       member.targetHomeId = undefined;
@@ -521,7 +547,9 @@ function handleIdleLogic(
   mapHeight: number,
   blocked: Set<string>,
   target?: { x: number; y: number },
-  workshops?: Building[]
+  workshops?: Building[],
+  allEntities?: Entity[],
+  isRoundTick?: boolean
 ): boolean {
   if (target && (member.x !== target.x || member.y !== target.y)) {
     const path = findPath(
@@ -543,43 +571,102 @@ function handleIdleLogic(
     (member.state === "idle" || member.state === "patrol") &&
     (!member.stateEnd || now > member.stateEnd)
   ) {
-    if (workshops && workshops.length > 0 && Math.random() < 0.6) {
-      let nearestWorkshop: Building | null = null;
-      let nearestDist = Number.POSITIVE_INFINITY;
-      for (const w of workshops) {
-        if (
-          (w.constructionEnd && now < w.constructionEnd) ||
-          w.ownerId !== member.ownerId
-        )
-          continue;
-        const dist = Math.sqrt(
-          (w.x + w.width / 2 - member.x) ** 2 +
-            (w.y + w.height / 2 - member.y) ** 2
-        );
-        if (dist < nearestDist) {
-          nearestDist = dist;
-          nearestWorkshop = w;
+    // Only family members use factory reservation
+    if (
+      member.type === "member" &&
+      workshops &&
+      workshops.length > 0 &&
+      allEntities
+    ) {
+      // Count reservations per factory
+      const factoryReservations: Record<string, number> = {};
+      for (const e of allEntities) {
+        if (e.reservedFactoryId && e.ownerId === member.ownerId) {
+          factoryReservations[e.reservedFactoryId] =
+            (factoryReservations[e.reservedFactoryId] || 0) + 1;
         }
       }
 
-      if (nearestWorkshop) {
-        const targetX =
-          nearestWorkshop.x + Math.floor(nearestWorkshop.width / 2);
-        const targetY = nearestWorkshop.y - 1;
-        const path = findPath(
-          { x: member.x, y: member.y },
-          { x: Math.max(0, targetX), y: Math.max(0, targetY) },
-          mapWidth,
-          mapHeight,
-          blocked
+      // If member has reservation and it's not a reoptimization tick, walk to reserved factory
+      if (member.reservedFactoryId && !isRoundTick) {
+        const reservedWorkshop = workshops.find(
+          (w) => w.id === member.reservedFactoryId
         );
-        if (path && path.length > 0) {
-          member.path = path;
-          member.pathIndex = 0;
-          member.state = "moving";
-          member.targetWorkshopId = nearestWorkshop.id;
-          member.stateEnd = undefined;
-          return true;
+        if (reservedWorkshop && reservedWorkshop.ownerId === member.ownerId) {
+          const targetX =
+            reservedWorkshop.x + Math.floor(reservedWorkshop.width / 2);
+          const targetY = reservedWorkshop.y - 1;
+          const path = findPath(
+            { x: member.x, y: member.y },
+            { x: Math.max(0, targetX), y: Math.max(0, targetY) },
+            mapWidth,
+            mapHeight,
+            blocked
+          );
+          if (path && path.length > 0) {
+            member.path = path;
+            member.pathIndex = 0;
+            member.state = "moving";
+            member.targetWorkshopId = reservedWorkshop.id;
+            member.stateEnd = undefined;
+            return true;
+          }
+        } else {
+          // Reserved factory no longer valid, clear reservation
+          member.reservedFactoryId = undefined;
+        }
+      }
+
+      // Find best available factory (on round tick, allow reoptimization)
+      if (!member.reservedFactoryId || isRoundTick) {
+        let bestWorkshop: Building | null = null;
+        let bestDist = Number.POSITIVE_INFINITY;
+
+        for (const w of workshops) {
+          if (
+            (w.constructionEnd && now < w.constructionEnd) ||
+            w.ownerId !== member.ownerId
+          ) {
+            continue;
+          }
+
+          // Check capacity (subtract 1 if this member already has this reservation)
+          const currentReservations = factoryReservations[w.id] || 0;
+          const myReservation = member.reservedFactoryId === w.id ? 1 : 0;
+          if (currentReservations - myReservation >= FACTORY_CAPACITY) {
+            continue;
+          }
+
+          const dist = Math.sqrt(
+            (w.x + w.width / 2 - member.x) ** 2 +
+              (w.y + w.height / 2 - member.y) ** 2
+          );
+          if (dist < bestDist) {
+            bestDist = dist;
+            bestWorkshop = w;
+          }
+        }
+
+        if (bestWorkshop) {
+          // Reserve slot and walk to factory
+          member.reservedFactoryId = bestWorkshop.id;
+          const targetX = bestWorkshop.x + Math.floor(bestWorkshop.width / 2);
+          const targetY = bestWorkshop.y - 1;
+          const path = findPath(
+            { x: member.x, y: member.y },
+            { x: Math.max(0, targetX), y: Math.max(0, targetY) },
+            mapWidth,
+            mapHeight,
+            blocked
+          );
+          if (path && path.length > 0) {
+            member.path = path;
+            member.pathIndex = 0;
+            member.state = "moving";
+            member.targetWorkshopId = bestWorkshop.id;
+            member.stateEnd = undefined;
+            return true;
+          }
         }
       }
     }
@@ -635,7 +722,9 @@ function updateMember(
   blocked: Set<string>,
   target?: { x: number; y: number },
   workshops?: Building[],
-  houses?: Building[]
+  houses?: Building[],
+  allEntities?: Entity[],
+  isRoundTick?: boolean
 ): boolean {
   if (handleWalking(member, now, workshops, houses)) {
     return true;
@@ -654,7 +743,9 @@ function updateMember(
       mapHeight,
       blocked,
       target,
-      workshops
+      workshops,
+      allEntities,
+      isRoundTick
     )
   ) {
     return true;
@@ -664,11 +755,7 @@ function updateMember(
 
 // --- Tick Helper Functions ---
 
-function categorizeBuildings(
-  buildings: Building[],
-  playerCredits: Record<string, number>,
-  isRoundTick: boolean
-) {
+function categorizeBuildings(buildings: Building[]) {
   const houses: Building[] = [];
   const workshops: Building[] = [];
   const barracks: Building[] = [];
@@ -682,10 +769,6 @@ function categorizeBuildings(
     }
     if (b.type === "barracks") {
       barracks.push(b);
-    }
-    // Only award base credits on round boundaries (every 50 ticks = 5 seconds)
-    if (b.type === "base_central" && b.ownerId && isRoundTick) {
-      playerCredits[b.ownerId] = (playerCredits[b.ownerId] || 0) + 1000;
     }
   }
   return { houses, workshops, barracks };
@@ -727,7 +810,9 @@ async function processActiveEntities(
         blocked,
         targetPos,
         workshops,
-        houses
+        houses,
+        entities,
+        isRoundTick
       )
     ) {
       dirty = true;
@@ -816,7 +901,8 @@ async function processInsideEntities(
   now: number,
   workshops: Building[],
   houses: Building[],
-  playerCredits: Record<string, number>
+  playerCredits: Record<string, number>,
+  isRoundTick: boolean
 ) {
   for (const entity of insideEntities) {
     let dirty = false;
@@ -842,7 +928,8 @@ async function processInsideEntities(
       dirty = true;
     }
 
-    if (entity.state === "working" && entity.ownerId) {
+    // Award working credits only on round ticks (every 50 ticks = 5 seconds)
+    if (entity.state === "working" && entity.ownerId && isRoundTick) {
       playerCredits[entity.ownerId] =
         (playerCredits[entity.ownerId] || 0) + 1000;
     }
@@ -879,6 +966,7 @@ async function handleSpawning(
       barracksId: b.id,
       ownerId: b.ownerId,
       state: "idle",
+      lastSpawnTime: now, // Initialize spawn timer
     });
 
     await ctx.db.insert("entities", {
@@ -901,6 +989,7 @@ async function handleSpawning(
         gameId,
         homeId: h.id,
         ownerId: h.ownerId,
+        lastSpawnTime: now, // Initialize spawn timer
       });
       knownFamilies.add(h.id);
     }
@@ -918,20 +1007,25 @@ async function handleSpawning(
 
   for (const fam of familiesUpdated) {
     const memberCount = entities.filter((e) => e.familyId === fam._id).length;
-    if (memberCount < 4 && Math.random() < 0.2) {
-      const home = houses.find((h) => h.id === fam.homeId);
-      if (home) {
-        await ctx.db.insert("entities", {
-          gameId,
-          ownerId: home.ownerId,
-          familyId: fam._id,
-          homeId: home.id,
-          type: "member",
-          state: "idle",
-          x: home.x,
-          y: home.y,
-          isInside: false,
-        });
+    // Only spawn if under capacity AND 30 seconds have passed
+    if (memberCount < 4) {
+      const lastSpawn = fam.lastSpawnTime || 0;
+      if (now > lastSpawn + SPAWN_INTERVAL_MS) {
+        const home = houses.find((h) => h.id === fam.homeId);
+        if (home) {
+          await ctx.db.insert("entities", {
+            gameId,
+            ownerId: home.ownerId,
+            familyId: fam._id,
+            homeId: home.id,
+            type: "member",
+            state: "idle",
+            x: home.x,
+            y: home.y,
+            isInside: false,
+          });
+          await ctx.db.patch(fam._id, { lastSpawnTime: now });
+        }
       }
     }
   }
@@ -944,9 +1038,10 @@ async function handleSpawning(
       (e) => e.troupeId === troupe._id && e.type === "commander"
     );
 
-    if (commander && soldiersCount < 10) {
+    // Only spawn soldiers if under capacity AND 30 seconds have passed
+    if (commander && soldiersCount < 4) {
       const lastSpawn = troupe.lastSpawnTime || 0;
-      if (now > lastSpawn + 10_000 + Math.random() * 20_000) {
+      if (now > lastSpawn + SPAWN_INTERVAL_MS) {
         await ctx.db.insert("entities", {
           gameId,
           ownerId: troupe.ownerId,
@@ -1094,7 +1189,9 @@ export const placeBuilding = mutation({
     const cost = calculateBuildingCost(
       buildingSpec.cost,
       map.buildings,
-      player._id
+      player._id,
+      args.buildingType,
+      player.inflation || 1.0 // Pass player's stored inflation
     );
 
     if ((player.credits || 0) < cost) {
@@ -1124,9 +1221,20 @@ export const placeBuilding = mutation({
       }
     }
 
-    await ctx.db.patch(player._id, {
-      credits: (player.credits || 0) - cost,
-    });
+    // Deduct credits and update inflation
+    if (cost > 0) {
+      // Non-free building: deduct cost and double inflation
+      const currentInflation = player.inflation || 1.0;
+      await ctx.db.patch(player._id, {
+        credits: (player.credits || 0) - cost,
+        inflation: currentInflation * 2, // Double inflation on each build
+      });
+    } else {
+      // Free building (first of type): only deduct credits (0), inflation stays 1.0
+      await ctx.db.patch(player._id, {
+        credits: (player.credits || 0) - cost,
+      });
+    }
 
     const totalTiles = buildingSpec.width * buildingSpec.height;
     const durationMs = totalTiles * buildingSpec.timePerTile;
@@ -1251,6 +1359,22 @@ export const tick = internalMutation({
     const isRoundTick = tickCount % TICKS_PER_ROUND === 0;
     await ctx.db.patch(game._id, { tickCount });
 
+    // 1.0 Inflation Decay (every round, reduce by 0.1 down to min 1.0)
+    if (isRoundTick) {
+      const players = await ctx.db
+        .query("players")
+        .filter((q) => q.eq(q.field("gameId"), args.gameId))
+        .collect();
+
+      for (const player of players) {
+        const currentInflation = player.inflation || 1.0;
+        if (currentInflation > 1.0) {
+          const newInflation = Math.max(1.0, currentInflation - 0.1);
+          await ctx.db.patch(player._id, { inflation: newInflation });
+        }
+      }
+    }
+
     // 1. Timer & End Game Check
     if (game.phaseEnd && now > game.phaseEnd) {
       await ctx.db.patch(game._id, { status: "ended" });
@@ -1260,20 +1384,17 @@ export const tick = internalMutation({
     // 1.1 Victory Check (Auto-End if 1 player left)
     // Only check if game is active
     if (game.status === "active" && game.phase === "simulation") {
-      const activePlayers = (
-        await ctx.db
-          .query("players")
-          .filter((q) => q.eq(q.field("gameId"), args.gameId))
-          .collect()
-      ).filter((p: Player) => !p.status || p.status === "active");
+      const allPlayers = await ctx.db
+        .query("players")
+        .filter((q) => q.eq(q.field("gameId"), args.gameId))
+        .collect();
+      const activePlayers = allPlayers.filter(
+        (p) => !p.status || p.status === "active"
+      );
 
-      if (activePlayers.length <= 1 && players.length > 1) {
+      if (activePlayers.length <= 1 && allPlayers.length > 1) {
         // Ensure >1 total players so solo testing doesn't instant-end
         await ctx.db.patch(game._id, { status: "ended" });
-        // Schedule cleanup
-        await ctx.scheduler.runAfter(10_000, internal.game.deleteGame, {
-          gameId: args.gameId,
-        });
         return;
       }
     }
@@ -1388,9 +1509,7 @@ export const tick = internalMutation({
       mapDoc.buildings
     );
     const { houses, workshops, barracks } = categorizeBuildings(
-      mapDoc.buildings,
-      playerCredits,
-      isRoundTick
+      mapDoc.buildings
     );
 
     // Build Spatial Hash
@@ -1425,7 +1544,8 @@ export const tick = internalMutation({
       now,
       workshops,
       houses,
-      playerCredits
+      playerCredits,
+      isRoundTick
     );
     await handleSpawning(
       ctx,

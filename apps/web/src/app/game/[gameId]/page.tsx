@@ -58,6 +58,15 @@ export default function GamePage() {
     return () => clearInterval(interval);
   }, []);
 
+  // Format time: show minutes if >= 100 seconds, otherwise show seconds
+  const formatGameTime = (seconds: number) => {
+    if (seconds >= 100) {
+      const minutes = Math.ceil(seconds / 60);
+      return { value: minutes, unit: "MIN" };
+    }
+    return { value: seconds, unit: "SEK" };
+  };
+
   const handleEndGame = async () => {
     await deleteGame({ gameId });
     router.push("/");
@@ -120,7 +129,7 @@ export default function GamePage() {
     );
   }
 
-  const { game, players, buildings, entities, troupes } = gameState;
+  const { game, players, buildings, entities, families, troupes } = gameState;
   const myPlayer =
     players.find((p) => session?.user?.id && p.userId === session.user.id) ||
     players.find((p) => !p.isBot) ||
@@ -145,11 +154,18 @@ export default function GamePage() {
 
   const myScore = calculateScore(myPlayer);
 
-  // Inflation
-  const myBuildingsCount = buildings.filter(
+  // Inflation from backend (stored per player, decays -0.1/round, doubles on build)
+  const inflationMultiplier = myPlayer?.inflation || 1.0;
+
+  // Keep playerBuildings for isFirstOfType check
+  const playerBuildings = buildings.filter(
     (b) => b.ownerId === myPlayer?._id && b.type !== "base_central"
-  ).length;
-  const inflationMultiplier = 2 ** myBuildingsCount;
+  );
+
+  // Helper to check if this is the first building of a type
+  const isFirstOfType = (type: string) => {
+    return !playerBuildings.some((b: any) => b.type === type);
+  };
 
   // Collect my troops
   const myTroops = troupes?.filter((t) => t.ownerId === myPlayer?._id) || [];
@@ -173,8 +189,12 @@ export default function GamePage() {
           {/* Timer */}
           <div className="mb-6 flex items-center gap-3">
             <Clock className="h-8 w-8 animate-pulse text-primary" />
-            <span className="font-bold font-mono text-5xl">{timeLeftSec}</span>
-            <span className="font-mono text-muted-foreground">SEK</span>
+            <span className="font-bold font-mono text-5xl">
+              {formatGameTime(timeLeftSec).value}
+            </span>
+            <span className="font-mono text-muted-foreground">
+              {formatGameTime(timeLeftSec).unit}
+            </span>
           </div>
 
           {/* Player count */}
@@ -221,6 +241,7 @@ export default function GamePage() {
       <GameCanvas
         buildings={buildings}
         entities={entities}
+        families={families}
         game={game}
         isBuildMode={mode === "build"}
         onMoveTroop={handleMapClick}
@@ -235,6 +256,7 @@ export default function GamePage() {
         selectedBuilding={selectedBuilding}
         selectedTroopId={selectedTroopId}
         staticMap={staticMap}
+        troupes={troupes}
       />
 
       {/* HUD */}
@@ -263,15 +285,23 @@ export default function GamePage() {
             </div>
           </div>
 
+          {/* Inflation Display */}
+          <div className="pixel-corners flex min-w-[100px] flex-col items-center border border-white/20 bg-black/50 p-2 text-white">
+            <div className="flex items-center gap-2 text-orange-400">
+              <span className="text-lg">📈</span>
+              <span className="font-bold font-mono text-xl">
+                {inflationMultiplier.toFixed(1)}x
+              </span>
+            </div>
+            <div className="font-mono text-[10px] text-muted-foreground uppercase">
+              Inflation
+            </div>
+          </div>
+
           <div className="pixel-corners flex min-w-[100px] flex-col items-center border border-white/20 bg-black/50 p-2 text-white">
             <div className="flex items-center gap-2 text-yellow-400">
               <Coins className="h-4 w-4" />
-              <span className="font-bold font-mono text-xl">
-                {credits}{" "}
-                <span className="text-white/70 text-xs">
-                  ({inflationMultiplier}x)
-                </span>
-              </span>
+              <span className="font-bold font-mono text-xl">{credits}</span>
             </div>
             <div className="font-mono text-[10px] text-muted-foreground uppercase">
               Credits
@@ -280,10 +310,10 @@ export default function GamePage() {
 
           <div className="pixel-corners border border-white/20 bg-black/50 p-2 text-white">
             <div className="text-center font-bold font-mono text-4xl">
-              {phaseTimeLeft > 0 ? phaseTimeLeft : "00"}
+              {phaseTimeLeft > 0 ? formatGameTime(phaseTimeLeft).value : "00"}
             </div>
             <div className="text-center font-mono text-muted-foreground text-xs">
-              SECONDS
+              {phaseTimeLeft > 0 ? formatGameTime(phaseTimeLeft).unit : "SEK"}
             </div>
           </div>
         </div>
@@ -349,7 +379,8 @@ export default function GamePage() {
       {mode === "build" && (
         <div className="pointer-events-auto absolute bottom-20 left-1/2 flex -translate-x-1/2 gap-2">
           {BUILDINGS_INFO.map((b) => {
-            const cost = b.baseCost * inflationMultiplier;
+            const isFree = isFirstOfType(b.id);
+            const cost = isFree ? 0 : b.baseCost * inflationMultiplier;
             const canAfford = credits >= cost;
             return (
               <div
@@ -370,10 +401,14 @@ export default function GamePage() {
                 <div
                   className={cn(
                     "font-mono text-[10px]",
-                    canAfford ? "text-yellow-400" : "text-red-500"
+                    isFree
+                      ? "text-green-400"
+                      : canAfford
+                        ? "text-yellow-400"
+                        : "text-red-500"
                   )}
                 >
-                  {cost} CR
+                  {isFree ? "GRATIS" : `${cost} CR`}
                 </div>
               </div>
             );

@@ -33,6 +33,7 @@ export function ModeSelector({ user }: ModeSelectorProps) {
 
   const findOrCreateLobby = useMutation(api.matchmaking.findOrCreateLobby);
   const leaveLobby = useMutation(api.matchmaking.leaveLobby);
+  const forceStartLobby = useMutation(api.matchmaking.forceStartLobby);
 
   // Query lobby status when joined
   const lobbyStatus = useQuery(
@@ -96,6 +97,27 @@ export function ModeSelector({ user }: ModeSelectorProps) {
       console.error("Failed to leave lobby:", error);
     }
   };
+
+  const handleForceStart = async () => {
+    if (!(gameId && playerId)) return;
+
+    try {
+      await forceStartLobby({ gameId, playerId });
+    } catch (error) {
+      console.error("Failed to start lobby:", error);
+    }
+  };
+
+  // Format time: show minutes if >= 100 seconds, otherwise show seconds
+  const formatTime = (seconds: number) => {
+    if (seconds >= 100) {
+      const minutes = Math.ceil(seconds / 60);
+      return { value: minutes, unit: "MIN" };
+    }
+    return { value: seconds, unit: "SEK" };
+  };
+
+  const timeDisplay = formatTime(displayTimeLeft);
 
   return (
     <div className="z-50 flex flex-col items-center">
@@ -233,9 +255,11 @@ export function ModeSelector({ user }: ModeSelectorProps) {
           <div className="mb-4 flex items-center justify-center gap-2">
             <Clock className="h-6 w-6 animate-pulse text-primary" />
             <span className="font-bold font-mono text-4xl text-white">
-              {displayTimeLeft}
+              {timeDisplay.value}
             </span>
-            <span className="font-mono text-muted-foreground text-sm">SEC</span>
+            <span className="font-mono text-muted-foreground text-sm">
+              {timeDisplay.unit}
+            </span>
           </div>
 
           {/* Player Count */}
@@ -266,13 +290,21 @@ export function ModeSelector({ user }: ModeSelectorProps) {
               : "Spiel startet..."}
           </p>
 
-          <Button
-            className="pixel-corners font-mono text-muted-foreground text-xs uppercase hover:text-destructive"
-            onClick={handleLeave}
-            variant="ghost"
-          >
-            Lobby verlassen
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              className="pixel-corners flex-1 border-green-600 bg-green-600 font-mono text-sm text-white uppercase hover:bg-green-700"
+              onClick={handleForceStart}
+            >
+              Lobby starten
+            </Button>
+            <Button
+              className="pixel-corners font-mono text-muted-foreground text-xs uppercase hover:text-destructive"
+              onClick={handleLeave}
+              variant="ghost"
+            >
+              Verlassen
+            </Button>
+          </div>
         </div>
       )}
     </div>

@@ -119,6 +119,7 @@ export const findOrCreateLobby = mutation({
       name: args.playerName,
       teamId,
       credits: 0,
+      inflation: 1.0,
     });
 
     // Schedule game check
@@ -192,6 +193,7 @@ export const checkGameStart = mutation({
                 name: `Bot-${Math.floor(Math.random() * 1000)}`,
                 teamId: botTeam,
                 credits: 0,
+                inflation: 1.0,
               });
             }
           }
@@ -205,6 +207,7 @@ export const checkGameStart = mutation({
               name: `Bot-${Math.floor(Math.random() * 1000)}`,
               teamId: undefined,
               credits: 0,
+              inflation: 1.0,
             });
           }
         }
@@ -358,6 +361,42 @@ export const leaveLobby = mutation({
       // Delete the game if no players left
       await ctx.runMutation(api.game.deleteGame, { gameId: args.gameId });
     }
+
+    return { success: true };
+  },
+});
+
+export const forceStartLobby = mutation({
+  args: {
+    gameId: v.id("games"),
+    playerId: v.id("players"),
+  },
+  returns: v.object({ success: v.boolean() }),
+  handler: async (ctx, args) => {
+    const player = await ctx.db.get(args.playerId);
+    if (!player) {
+      throw new Error("Player not found");
+    }
+
+    if (player.gameId !== args.gameId) {
+      throw new Error("Player is not in this game");
+    }
+
+    const game = await ctx.db.get(args.gameId);
+    if (!game || game.status !== "waiting") {
+      throw new Error("Game is not in waiting state");
+    }
+
+    // Force the game check to start the game immediately
+    // Temporarily update createdAt to make the timer expire
+    await ctx.db.patch(args.gameId, {
+      createdAt: Date.now() - 120_000, // Set to 2 minutes ago to trigger start
+    });
+
+    // Run the game start check
+    await ctx.runMutation(api.matchmaking.checkGameStart, {
+      gameId: args.gameId,
+    });
 
     return { success: true };
   },

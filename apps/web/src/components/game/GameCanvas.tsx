@@ -85,6 +85,10 @@ interface ExtendedGameCanvasProps extends GameCanvasProps {
   selectedTroopId?: string | null;
   onSelectTroop?: (troopId: string | null) => void;
   onMoveTroop?: (x: number, y: number) => void;
+
+  // Spawn timer data
+  families?: Array<{ _id: string; homeId: string; lastSpawnTime?: number }>;
+  troupes?: Array<{ _id: string; barracksId: string; lastSpawnTime?: number }>;
 }
 
 const TILE_SIZE = 1;
@@ -315,7 +319,7 @@ function StructuresRenderer({ map }: { map: GameMap }) {
           key={`${s.type}-${s.x}-${s.y}-${i}`}
           position={[s.x + s.width / 2 - 0.5, s.y + s.height / 2 - 0.5, 0.1]}
         >
-          <boxGeometry args={[s.width, s.height, 1]} />
+          <planeGeometry args={[s.width, s.height]} />
           <meshStandardMaterial color={palette.rock} />
         </mesh>
       ))}
@@ -323,80 +327,254 @@ function StructuresRenderer({ map }: { map: GameMap }) {
   );
 }
 
+// Building capacity constants
+const FACTORY_CAPACITY = 16;
+const HOUSE_CAPACITY = 4;
+const BARRACKS_CAPACITY = 4;
+const SPAWN_INTERVAL_MS = 30_000;
+
+// Helper to get building icon character
+function getBuildingIcon(type: string): string {
+  switch (type) {
+    case "house":
+      return "🏠";
+    case "workshop":
+      return "🏭";
+    case "barracks":
+      return "⚔️";
+    case "base_central":
+      return "👑";
+    default:
+      return "🏢";
+  }
+}
+
+// Helper to get building capacity
+function getBuildingCapacity(type: string): number {
+  switch (type) {
+    case "house":
+      return HOUSE_CAPACITY;
+    case "workshop":
+      return FACTORY_CAPACITY;
+    case "barracks":
+      return BARRACKS_CAPACITY;
+    case "base_central":
+      return 0;
+    default:
+      return 0;
+  }
+}
+
 function BuildingsRenderer({
   buildings,
   entities,
+  families,
+  troupes,
 }: {
   buildings: Building[];
   entities?: Entity[];
+  families?: Array<{ _id: string; homeId: string; lastSpawnTime?: number }>;
+  troupes?: Array<{ _id: string; barracksId: string; lastSpawnTime?: number }>;
 }) {
-  // Count workshop occupancy
-  const workshopOccupancy = useMemo(() => {
-    const counts: Record<string, number> = {};
+  // Count per-building stats
+  const buildingStats = useMemo(() => {
+    const stats: Record<
+      string,
+      {
+        active: number;
+        working: number;
+        sleeping: number;
+        total: number;
+        lastSpawnTime?: number;
+      }
+    > = {};
+
     if (entities) {
       for (const entity of entities) {
-        if (entity.state === "working" && entity.workplaceId) {
-          counts[entity.workplaceId] = (counts[entity.workplaceId] || 0) + 1;
+        // Count active (not inside) entities by home/workplace
+        if (entity.homeId && !entity.isInside) {
+          if (!stats[entity.homeId]) {
+            stats[entity.homeId] = {
+              active: 0,
+              working: 0,
+              sleeping: 0,
+              total: 0,
+            };
+          }
+          stats[entity.homeId].active++;
+          stats[entity.homeId].total++;
+        }
+        if (entity.workplaceId) {
+          if (!stats[entity.workplaceId]) {
+            stats[entity.workplaceId] = {
+              active: 0,
+              working: 0,
+              sleeping: 0,
+              total: 0,
+            };
+          }
+          if (entity.state === "working") {
+            stats[entity.workplaceId].working++;
+          }
+        }
+        // Count sleeping entities by home
+        if (entity.homeId && entity.state === "sleeping") {
+          if (!stats[entity.homeId]) {
+            stats[entity.homeId] = {
+              active: 0,
+              working: 0,
+              sleeping: 0,
+              total: 0,
+            };
+          }
+          stats[entity.homeId].sleeping++;
         }
       }
     }
-    return counts;
-  }, [entities]);
+
+    // Add spawn time from families/troupes
+    if (families) {
+      for (const family of families) {
+        if (!stats[family.homeId]) {
+          stats[family.homeId] = {
+            active: 0,
+            working: 0,
+            sleeping: 0,
+            total: 0,
+          };
+        }
+        stats[family.homeId].lastSpawnTime = family.lastSpawnTime;
+      }
+    }
+    if (troupes) {
+      for (const troupe of troupes) {
+        if (!stats[troupe.barracksId]) {
+          stats[troupe.barracksId] = {
+            active: 0,
+            working: 0,
+            sleeping: 0,
+            total: 0,
+          };
+        }
+        stats[troupe.barracksId].lastSpawnTime = troupe.lastSpawnTime;
+      }
+    }
+
+    return stats;
+  }, [entities, families, troupes]);
 
   return (
     <group>
       {buildings.map((b) => {
         const isUnderConstruction =
           b.constructionEnd && b.constructionEnd > Date.now();
-        const occupancy = workshopOccupancy[b.id] || 0;
-        const isWorkshop = b.type === "workshop";
+        const stat = buildingStats[b.id] || {
+          active: 0,
+          working: 0,
+          sleeping: 0,
+          total: 0,
+        };
+        const capacity = getBuildingCapacity(b.type);
+        const icon = getBuildingIcon(b.type);
+
+        // Calculate spawn timer
+        const now = Date.now();
+        const lastSpawn = stat.lastSpawnTime || 0;
+        const nextSpawnAt = lastSpawn + SPAWN_INTERVAL_MS;
+        const timeToSpawn = Math.max(0, Math.ceil((nextSpawnAt - now) / 1000));
+        const showSpawnTimer = b.type === "house" || b.type === "barracks";
+
+        // Building center position
+        const centerX = b.x + b.width / 2 - 0.5;
+        const centerY = b.y + b.height / 2 - 0.5;
 
         return (
           <group key={b.id}>
-            <mesh
-              position={[
-                b.x + b.width / 2 - 0.5,
-                b.y + b.height / 2 - 0.5,
-                0.2,
-              ]}
-            >
-              <boxGeometry args={[b.width, b.height, 2]} />
+            {/* Building mesh */}
+            <mesh position={[centerX, centerY, 0.2]}>
+              <planeGeometry args={[b.width, b.height]} />
               <meshStandardMaterial
                 color={isUnderConstruction ? "orange" : "blue"}
                 wireframe={!!isUnderConstruction}
               />
             </mesh>
-            {/* Status for Under Construction */}
+
+            {/* Construction overlay */}
             {isUnderConstruction && (
-              <mesh
-                position={[
-                  b.x + b.width / 2 - 0.5,
-                  b.y + b.height / 2 - 0.5,
-                  1.5,
-                ]}
-              >
-                <boxGeometry args={[b.width * 0.8, b.height * 0.8, 0.1]} />
+              <mesh position={[centerX, centerY, 1.5]}>
+                <planeGeometry args={[b.width * 0.8, b.height * 0.8]} />
                 <meshBasicMaterial color="yellow" opacity={0.5} transparent />
               </mesh>
             )}
-            {/* Workshop worker count display */}
-            {isWorkshop && !isUnderConstruction && (
-              <Text
-                anchorX="center"
-                anchorY="middle"
-                color={occupancy > 0 ? "lime" : "red"}
-                fontSize={1.5}
-                position={[b.x + b.width / 2 - 0.5, b.y + b.height + 0.5, 2]}
-              >
-                {occupancy > 0 ? `👷${occupancy}` : "⚠️0"}
-              </Text>
+
+            {/* Building Icon (centered) */}
+            {!isUnderConstruction && (
+              <>
+                {/* Icon circle background */}
+                <mesh position={[centerX, centerY, 2.5]}>
+                  <circleGeometry args={[1.2, 32]} />
+                  <meshBasicMaterial
+                    color="#1a1a2e"
+                    opacity={0.9}
+                    transparent
+                  />
+                </mesh>
+                {/* Icon text */}
+                <Text
+                  anchorX="center"
+                  anchorY="middle"
+                  fontSize={1.5}
+                  position={[centerX, centerY, 2.6]}
+                >
+                  {icon}
+                </Text>
+
+                {/* Active/Max count (top-right of icon) */}
+                {capacity > 0 && (
+                  <Text
+                    anchorX="left"
+                    anchorY="bottom"
+                    color={stat.active > 0 ? "#4ade80" : "#ef4444"}
+                    fontSize={0.8}
+                    position={[centerX + 1.3, centerY + 0.8, 2.7]}
+                  >
+                    {stat.active}/{capacity}
+                  </Text>
+                )}
+
+                {/* Spawn timer (bottom-right of icon) */}
+                {showSpawnTimer && stat.total < capacity && (
+                  <Text
+                    anchorX="left"
+                    anchorY="top"
+                    color="#94a3b8"
+                    fontSize={0.6}
+                    position={[centerX + 1.3, centerY - 0.8, 2.7]}
+                  >
+                    {timeToSpawn}s
+                  </Text>
+                )}
+
+                {/* Working/Sleeping count (bottom-left of icon) */}
+                {(stat.working > 0 || stat.sleeping > 0) && (
+                  <Text
+                    anchorX="right"
+                    anchorY="top"
+                    color={stat.working > 0 ? "#fbbf24" : "#60a5fa"}
+                    fontSize={0.6}
+                    position={[centerX - 1.3, centerY - 0.8, 2.7]}
+                  >
+                    {stat.working > 0
+                      ? `⚙${stat.working}`
+                      : `💤${stat.sleeping}`}
+                  </Text>
+                )}
+              </>
             )}
 
             {/* Capture Progress Bar */}
             {b.captureStart && (
-              <group
-                position={[b.x + b.width / 2 - 0.5, b.y + b.height + 1.5, 3]}
-              >
+              <group position={[centerX, b.y + b.height + 1.5, 3]}>
                 <mesh position={[0, 0, 0]}>
                   <planeGeometry args={[3, 0.4]} />
                   <meshBasicMaterial color="black" />
@@ -941,6 +1119,8 @@ export function GameCanvas({
   selectedTroopId,
   onSelectTroop,
   onMoveTroop,
+  families,
+  troupes,
 }: ExtendedGameCanvasProps) {
   const placeBase = useMutation(api.game.placeBase);
   const isDraggingRef = useRef(false);
@@ -985,7 +1165,12 @@ export function GameCanvas({
 
       <MapRenderer map={staticMap} />
       <StructuresRenderer map={staticMap} />
-      <BuildingsRenderer buildings={buildings} entities={entities} />
+      <BuildingsRenderer
+        buildings={buildings}
+        entities={entities}
+        families={families}
+        troupes={troupes}
+      />
 
       {entities && <LasersRenderer entities={entities} />}
 

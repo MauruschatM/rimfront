@@ -29,6 +29,8 @@ const entityObject = {
   pathProgress: v.optional(v.number()), // 0.0-1.0 progress within current tile
   // Factory reservation
   reservedFactoryId: v.optional(v.string()), // Reserved workshop slot
+  // Pathfinding backoff
+  nextPathAttempt: v.optional(v.number()),
 };
 
 export default defineSchema({

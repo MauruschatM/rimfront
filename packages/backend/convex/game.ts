@@ -150,6 +150,7 @@ type Entity = {
   attackEndTime?: number;
   pathProgress?: number; // 0.0-1.0 progress within current tile
   reservedFactoryId?: string; // Reserved workshop slot
+  nextPathAttempt?: number;
 };
 
 type Troupe = {
@@ -459,6 +460,7 @@ function handleWalking(
 
     member.state = "idle";
     member.stateEnd = now + 3000 + Math.random() * 3000;
+    member.nextPathAttempt = undefined; // Reset backoff
     return true;
   }
 
@@ -552,18 +554,25 @@ function handleIdleLogic(
   isRoundTick?: boolean
 ): boolean {
   if (target && (member.x !== target.x || member.y !== target.y)) {
-    const path = findPath(
-      { x: member.x, y: member.y },
-      target,
-      mapWidth,
-      mapHeight,
-      blocked
-    );
-    if (path) {
-      member.path = path;
-      member.pathIndex = 0;
-      member.state = "moving";
-      return true;
+    // Check backoff
+    if (!member.nextPathAttempt || now >= member.nextPathAttempt) {
+      const path = findPath(
+        { x: member.x, y: member.y },
+        target,
+        mapWidth,
+        mapHeight,
+        blocked
+      );
+      if (path) {
+        member.path = path;
+        member.pathIndex = 0;
+        member.state = "moving";
+        member.nextPathAttempt = undefined; // Success!
+        return true;
+      } else {
+        // Pathfinding failed: Backoff for 2 seconds
+        member.nextPathAttempt = now + 2000;
+      }
     }
   }
 
@@ -1784,6 +1793,7 @@ export const moveTroop = mutation({
         state: "idle",
         path: undefined,
         pathIndex: undefined,
+        nextPathAttempt: undefined, // Reset backoff so they react immediately
       });
     }
   },

@@ -95,7 +95,7 @@ export default function GamePage() {
     try {
       await moveTroop({
         gameId,
-        troupeId: selectedTroopId as Id<"troups">,
+        troopId: selectedTroopId as Id<"troops">,
         targetX: x,
         targetY: y,
       });
@@ -130,7 +130,7 @@ export default function GamePage() {
     );
   }
 
-  const { game, players, buildings, entities, families, troupes } = gameState;
+  const { game, players, buildings, entities, families, troops } = gameState;
   const myPlayer =
     players.find((p) => session?.user?.id && p.userId === session.user.id) ||
     players.find((p) => !p.isBot) ||
@@ -169,7 +169,7 @@ export default function GamePage() {
   };
 
   // Collect my troops
-  const myTroops = troupes?.filter((t) => t.ownerId === myPlayer?._id) || [];
+  const myTroops = troops?.filter((t) => t.ownerId === myPlayer?._id) || [];
 
   // Phase Check - Waiting for game to start
   if (game.phase === "lobby" || game.status === "waiting") {
@@ -258,7 +258,7 @@ export default function GamePage() {
         selectedBuilding={selectedBuilding}
         selectedTroopId={selectedTroopId}
         staticMap={staticMap}
-        troupes={troupes}
+        troops={troops}
         myPlayerId={myPlayer?._id}
       />
 
@@ -363,7 +363,7 @@ export default function GamePage() {
                   <span className="font-mono text-[10px] text-white/50">
                     {
                       entities.filter(
-                        (e: any) => e.troupeId === t._id && e.type === "soldier"
+                        (e: any) => e.troopId === t._id && e.type === "soldier"
                       ).length
                     }{" "}
                     Soldiers

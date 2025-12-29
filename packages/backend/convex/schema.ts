@@ -5,7 +5,7 @@ const entityObject = {
   gameId: v.id("games"),
   ownerId: v.id("players"),
   familyId: v.optional(v.id("families")),
-  troupeId: v.optional(v.id("troups")),
+  troopId: v.optional(v.id("troops")),
   type: v.string(), // "member", "commander", "soldier"
   state: v.string(), // "idle", "moving", "working", "sleeping", "patrol"
   x: v.number(),
@@ -79,7 +79,7 @@ export default defineSchema({
   entities: defineTable(entityObject)
     .index("by_gameId", ["gameId"])
     .index("by_familyId", ["familyId"])
-    .index("by_troupeId", ["troupeId"])
+    .index("by_troopId", ["troopId"])
     .index("by_gameId_and_isInside", ["gameId", "isInside"]),
   families: defineTable({
     gameId: v.id("games"),
@@ -87,7 +87,7 @@ export default defineSchema({
     ownerId: v.id("players"),
     lastSpawnTime: v.optional(v.number()), // Timestamp of last member spawn
   }).index("by_gameId", ["gameId"]),
-  troups: defineTable({
+  troops: defineTable({
     gameId: v.id("games"),
     barracksId: v.string(), // ID from map.buildings
     ownerId: v.id("players"),

@@ -22,7 +22,7 @@ interface Entity {
   y: number;
   isInside: boolean;
   familyId?: string;
-  troupeId?: string;
+  troopId?: string;
   homeId?: string;
   stateEnd?: number;
   path?: { x: number; y: number }[];
@@ -89,7 +89,7 @@ interface ExtendedGameCanvasProps extends GameCanvasProps {
 
   // Spawn timer data
   families?: Array<{ _id: string; homeId: string; lastSpawnTime?: number }>;
-  troupes?: Array<{ _id: string; barracksId: string; lastSpawnTime?: number }>;
+  troops?: Array<{ _id: string; barracksId: string; lastSpawnTime?: number }>;
 }
 
 const TILE_SIZE = 1;
@@ -418,12 +418,12 @@ function BuildingsRenderer({
   buildings,
   entities,
   families,
-  troupes,
+  troops,
 }: {
   buildings: Building[];
   entities?: Entity[];
   families?: Array<{ _id: string; homeId: string; lastSpawnTime?: number }>;
-  troupes?: Array<{ _id: string; barracksId: string; lastSpawnTime?: number }>;
+  troops?: Array<{ _id: string; barracksId: string; lastSpawnTime?: number }>;
 }) {
   // Count per-building stats
   const buildingStats = useMemo(() => {
@@ -454,19 +454,19 @@ function BuildingsRenderer({
           stats[entity.homeId].total++;
         }
         // Count soldiers towards barracks
-        if (entity.troupeId && !entity.isInside) {
-          const troupe = troupes?.find((t) => t._id === entity.troupeId);
-          if (troupe) {
-            if (!stats[troupe.barracksId]) {
-              stats[troupe.barracksId] = {
+        if (entity.troopId && !entity.isInside) {
+          const troop = troops?.find((t) => t._id === entity.troopId);
+          if (troop) {
+            if (!stats[troop.barracksId]) {
+              stats[troop.barracksId] = {
                 active: 0,
                 working: 0,
                 sleeping: 0,
                 total: 0,
               };
             }
-            stats[troupe.barracksId].active++;
-            stats[troupe.barracksId].total++;
+            stats[troop.barracksId].active++;
+            stats[troop.barracksId].total++;
           }
         }
         if (entity.workplaceId) {
@@ -497,7 +497,7 @@ function BuildingsRenderer({
       }
     }
 
-    // Add spawn time from families/troupes
+    // Add spawn time from families/troops
     if (families) {
       for (const family of families) {
         if (!stats[family.homeId]) {
@@ -511,22 +511,22 @@ function BuildingsRenderer({
         stats[family.homeId].lastSpawnTime = family.lastSpawnTime;
       }
     }
-    if (troupes) {
-      for (const troupe of troupes) {
-        if (!stats[troupe.barracksId]) {
-          stats[troupe.barracksId] = {
+    if (troops) {
+      for (const troop of troops) {
+        if (!stats[troop.barracksId]) {
+          stats[troop.barracksId] = {
             active: 0,
             working: 0,
             sleeping: 0,
             total: 0,
           };
         }
-        stats[troupe.barracksId].lastSpawnTime = troupe.lastSpawnTime;
+        stats[troop.barracksId].lastSpawnTime = troop.lastSpawnTime;
       }
     }
 
     return stats;
-  }, [entities, families, troupes]);
+  }, [entities, families, troops]);
 
   return (
     <group>
@@ -819,8 +819,8 @@ function UnitsRenderer({
       const instanceId = e.instanceId;
       if (instanceId !== undefined && list[instanceId]) {
         const unit = list[instanceId];
-        if (unit.troupeId) {
-          onSelectTroop(unit.troupeId);
+        if (unit.troopId) {
+          onSelectTroop(unit.troopId);
         }
       }
     },
@@ -851,7 +851,7 @@ function UnitsRenderer({
     if (mesh) {
       const color = new THREE.Color();
       commanders.forEach((c, i) => {
-        if (selectedTroopId && c.troupeId === selectedTroopId) {
+        if (selectedTroopId && c.troopId === selectedTroopId) {
           color.set("yellow");
         } else {
           color.set("red");
@@ -867,7 +867,7 @@ function UnitsRenderer({
     if (mesh) {
       const color = new THREE.Color();
       soldiers.forEach((s, i) => {
-        if (selectedTroopId && s.troupeId === selectedTroopId) {
+        if (selectedTroopId && s.troopId === selectedTroopId) {
           color.set("orange");
         } else {
           color.set("maroon");
@@ -1347,7 +1347,7 @@ export function GameCanvas({
   onSelectTroop,
   onMoveTroop,
   families,
-  troupes,
+  troops,
   myPlayerId,
 }: ExtendedGameCanvasProps) {
   const placeBase = useMutation(api.game.placeBase);
@@ -1441,7 +1441,7 @@ export function GameCanvas({
         buildings={buildings}
         entities={entities}
         families={families}
-        troupes={troupes}
+        troops={troops}
       />
 
       {entities && <LasersRenderer entities={entities} />}

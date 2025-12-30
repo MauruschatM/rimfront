@@ -155,6 +155,7 @@ export function ModeSelector({ user }: ModeSelectorProps) {
           {/* Tabs */}
           <div className="flex gap-4 border-muted border-b-2 pb-2">
             <button
+              type="button"
               className={cn(
                 "px-4 py-2 font-mono text-sm uppercase transition-colors hover:text-primary",
                 activeTab === "multiplayer"
@@ -166,6 +167,7 @@ export function ModeSelector({ user }: ModeSelectorProps) {
               Multiplayer
             </button>
             <button
+              type="button"
               className={cn(
                 "cursor-not-allowed px-4 py-2 font-mono text-muted-foreground/50 text-sm uppercase transition-colors",
                 activeTab === "private"
@@ -184,14 +186,16 @@ export function ModeSelector({ user }: ModeSelectorProps) {
               Game Mode
             </h3>
             <div className="flex gap-4">
-              <div
+              <button
+                aria-pressed={selectedMode === "fronts"}
                 className={cn(
-                  "pixel-corners flex-1 cursor-pointer border-2 bg-muted/20 p-4 transition-all hover:bg-muted/40",
+                  "pixel-corners w-full flex-1 cursor-pointer border-2 bg-muted/20 p-4 text-left transition-all hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
                   selectedMode === "fronts"
                     ? "border-primary bg-primary/10"
                     : "border-transparent"
                 )}
                 onClick={() => setSelectedMode("fronts")}
+                type="button"
               >
                 <div className="flex items-center gap-3">
                   <Globe className="h-8 w-8 text-primary" />
@@ -202,7 +206,7 @@ export function ModeSelector({ user }: ModeSelectorProps) {
                     </div>
                   </div>
                 </div>
-              </div>
+              </button>
               {/* Future modes can go here */}
             </div>
           </div>
@@ -314,28 +318,28 @@ export function ModeSelector({ user }: ModeSelectorProps) {
 function SubModeCard({
   icon,
   label,
-  value,
   selected,
   onClick,
 }: {
   icon: React.ReactNode;
   label: string;
-  value: string;
   selected: boolean;
   onClick: () => void;
 }) {
   return (
-    <div
+    <button
+      aria-pressed={selected}
       className={cn(
-        "pixel-corners flex cursor-pointer flex-col items-center justify-center gap-2 border-2 p-4 transition-all hover:scale-105 active:scale-95",
+        "pixel-corners flex w-full cursor-pointer flex-col items-center justify-center gap-2 border-2 p-4 transition-all hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary active:scale-95",
         selected
           ? "border-primary bg-primary/20 text-primary"
           : "border-muted bg-background text-muted-foreground hover:border-primary/50"
       )}
       onClick={onClick}
+      type="button"
     >
       {icon}
       <span className="text-center font-mono text-xs uppercase">{label}</span>
-    </div>
+    </button>
   );
 }

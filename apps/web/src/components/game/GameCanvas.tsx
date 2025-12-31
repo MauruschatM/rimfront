@@ -674,11 +674,20 @@ function BuildingsRenderer({
 }
 
 function LasersRenderer({ entities }: { entities: Entity[] }) {
-  // Filter for attacking units
-  const attackingUnits = useMemo(() => {
-    return entities.filter(
-      (e) => e.attackTargetId && e.attackEndTime && e.attackEndTime > Date.now()
-    );
+  // ⚡ Bolt Optimization: Combine Map creation and filtering into one pass O(N)
+  // instead of O(N*K) lookup
+  const { entityMap, attackingUnits } = useMemo(() => {
+    const map = new Map<string, Entity>();
+    const attacking: Entity[] = [];
+    const now = Date.now();
+
+    for (const e of entities) {
+      map.set(e._id, e);
+      if (e.attackTargetId && e.attackEndTime && e.attackEndTime > now) {
+        attacking.push(e);
+      }
+    }
+    return { entityMap: map, attackingUnits: attacking };
   }, [entities]);
 
   // We need to re-render every frame to update lasers or handle animations
@@ -688,30 +697,28 @@ function LasersRenderer({ entities }: { entities: Entity[] }) {
   // For simplicity with `drei/Line`, we just map them.
 
   // Find targets
-  const lasers = attackingUnits
-    .map((unit) => {
-      const target = entities.find((e) => e._id === unit.attackTargetId);
-      if (!target) return null;
+  const lasers = useMemo(() => {
+    return attackingUnits
+      .map((unit) => {
+        const target = entityMap.get(unit.attackTargetId!);
+        if (!target) return null;
 
-      // Add jitter to target position
-      const jitterX = (Math.random() - 0.5) * 0.5;
-      const jitterY = (Math.random() - 0.5) * 0.5;
+        // Add jitter to target position
+        const jitterX = (Math.random() - 0.5) * 0.5;
+        const jitterY = (Math.random() - 0.5) * 0.5;
 
-      return {
-        id: unit._id,
-        start: [unit.x, unit.y, 1] as [number, number, number],
-        end: [target.x + jitterX, target.y + jitterY, 1] as [
-          number,
-          number,
-          number,
-        ],
-      };
-    })
-    .filter(Boolean) as {
-    id: string;
-    start: [number, number, number];
-    end: [number, number, number];
-  }[];
+        return {
+          id: unit._id,
+          start: [unit.x, unit.y, 1] as [number, number, number],
+          end: [target.x + jitterX, target.y + jitterY, 1] as [
+            number,
+            number,
+            number,
+          ],
+        };
+      })
+      .filter((l): l is { id: string; start: [number, number, number]; end: [number, number, number] } => !!l);
+  }, [attackingUnits, entityMap]);
 
   return (
     <group>

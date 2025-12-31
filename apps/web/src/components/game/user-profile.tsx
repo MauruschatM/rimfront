@@ -74,15 +74,26 @@ export function UserProfile({ user }: UserProfileProps) {
     }
   }
 
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
   async function onLogout() {
-    await authClient.signOut({
-      fetchOptions: {
-        onSuccess: () => {
-          toast.success("Logged out successfully");
-          // window.location.reload(); // better-auth usually handles session state updates reactively
+    setIsLoggingOut(true);
+    try {
+      await authClient.signOut({
+        fetchOptions: {
+          onSuccess: () => {
+            toast.success("Logged out successfully");
+            // window.location.reload(); // better-auth usually handles session state updates reactively
+          },
+          onError: () => {
+            setIsLoggingOut(false);
+          },
         },
-      },
-    });
+      });
+    } catch (error) {
+      console.error(error);
+      setIsLoggingOut(false);
+    }
   }
 
   return (
@@ -202,10 +213,15 @@ export function UserProfile({ user }: UserProfileProps) {
                 <div className="border-border border-t pt-4">
                   <Button
                     className="w-full rounded-none font-sans"
+                    disabled={isLoggingOut}
                     onClick={onLogout}
                     variant="destructive"
                   >
-                    <LogOut className="mr-2 h-4 w-4" />
+                    {isLoggingOut ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <LogOut className="mr-2 h-4 w-4" />
+                    )}
                     DISENGAGE (LOGOUT)
                   </Button>
                 </div>

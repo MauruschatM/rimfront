@@ -246,6 +246,7 @@ export default function GamePage() {
         families={families}
         game={game}
         isBuildMode={mode === "build"}
+        myPlayerId={myPlayer?._id}
         onMoveTroop={handleMapClick}
         onPlaceBuilding={(type, x, y) => handleMapClick(x, y)}
         onSelectTroop={(id) => {
@@ -259,7 +260,6 @@ export default function GamePage() {
         selectedTroopId={selectedTroopId}
         staticMap={staticMap}
         troupes={troupes}
-        myPlayerId={myPlayer?._id}
       />
 
       {/* HUD */}

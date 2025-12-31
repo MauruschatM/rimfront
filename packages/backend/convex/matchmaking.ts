@@ -11,6 +11,12 @@ export const findOrCreateLobby = mutation({
     userId: v.optional(v.string()), // Passed from client if needed, or derived from context
   },
   handler: async (ctx, args) => {
+    // Security: Validate player name
+    const cleanName = args.playerName.trim();
+    if (cleanName.length < 2 || cleanName.length > 20) {
+      throw new Error("Player name must be between 2 and 20 characters");
+    }
+
     // 1. Look for an existing waiting game of this type/subMode
     const waitingGames = await ctx.db
       .query("games")
@@ -116,7 +122,7 @@ export const findOrCreateLobby = mutation({
       gameId: gameIdToJoin,
       userId: args.userId,
       isBot: false,
-      name: args.playerName,
+      name: cleanName,
       teamId,
       credits: 0,
       inflation: 1.0,

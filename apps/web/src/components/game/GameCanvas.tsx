@@ -130,7 +130,9 @@ function getEnergyTiles(
     for (let x = minX; x < maxX; x++) {
       for (let y = minY; y < maxY; y++) {
         // Distance check
-        const dist = Math.sqrt((x + 0.5 - centerX) ** 2 + (y + 0.5 - centerY) ** 2);
+        const dist = Math.sqrt(
+          (x + 0.5 - centerX) ** 2 + (y + 0.5 - centerY) ** 2
+        );
         // We use slightly larger threshold for tiles to be "in field" visually
         // 4 tiles from edge. Edge is size/2 away.
         // So dist <= size/2 + 4.
@@ -1163,12 +1165,22 @@ function InteractionPlane({
     if (hoverPos && staticMap) {
       let isBlocked = false;
       // Map Bounds
-      if (hoverPos.x < 0 || hoverPos.y < 0 || hoverPos.x + 5 > width || hoverPos.y + 5 > height) {
+      if (
+        hoverPos.x < 0 ||
+        hoverPos.y < 0 ||
+        hoverPos.x + 5 > width ||
+        hoverPos.y + 5 > height
+      ) {
         isBlocked = true;
       }
       // Collisions
       if (!isBlocked) {
-        const structures = staticMap.structures as Array<{ x: number; y: number; width: number; height: number }>;
+        const structures = staticMap.structures as Array<{
+          x: number;
+          y: number;
+          width: number;
+          height: number;
+        }>;
         // Check buildings (except my own base which I haven't placed yet, but in placement phase I don't have one)
         // Wait, other players bases might exist.
         for (const b of buildings) {
@@ -1182,24 +1194,23 @@ function InteractionPlane({
             break;
           }
         }
-         // Check structures
+        // Check structures
         if (!isBlocked && structures) {
-           for (const s of structures) {
-             if (
-               hoverPos.x < s.x + s.width &&
-               hoverPos.x + 5 > s.x &&
-               hoverPos.y < s.y + s.height &&
-               hoverPos.y + 5 > s.y
-             ) {
-               isBlocked = true;
-               break;
-             }
-           }
+          for (const s of structures) {
+            if (
+              hoverPos.x < s.x + s.width &&
+              hoverPos.x + 5 > s.x &&
+              hoverPos.y < s.y + s.height &&
+              hoverPos.y + 5 > s.y
+            ) {
+              isBlocked = true;
+              break;
+            }
+          }
         }
       }
       if (isBlocked) cursorColor = "red";
     }
-
   } else if (isBuildMode && selectedBuilding) {
     cursorColor = "lime"; // Default to lime (green), turn red if invalid
     switch (selectedBuilding) {
@@ -1228,7 +1239,12 @@ function InteractionPlane({
       let isValid = true;
 
       // 1. Bounds
-      if (hoverPos.x < 0 || hoverPos.y < 0 || hoverPos.x + cursorWidth > width || hoverPos.y + cursorHeight > height) {
+      if (
+        hoverPos.x < 0 ||
+        hoverPos.y < 0 ||
+        hoverPos.x + cursorWidth > width ||
+        hoverPos.y + cursorHeight > height
+      ) {
         isValid = false;
       }
 
@@ -1236,7 +1252,7 @@ function InteractionPlane({
       if (isValid) {
         // Buildings (+1 buffer as per backend)
         for (const b of buildings) {
-           const noOverlap =
+          const noOverlap =
             hoverPos.x >= b.x + b.width + 1 ||
             hoverPos.x + cursorWidth + 1 <= b.x ||
             hoverPos.y >= b.y + b.height + 1 ||
@@ -1250,9 +1266,14 @@ function InteractionPlane({
 
         // Structures (Exact overlap)
         if (isValid && staticMap?.structures) {
-          const structures = staticMap.structures as Array<{ x: number; y: number; width: number; height: number }>;
+          const structures = staticMap.structures as Array<{
+            x: number;
+            y: number;
+            width: number;
+            height: number;
+          }>;
           for (const s of structures) {
-             const noOverlap =
+            const noOverlap =
               hoverPos.x >= s.x + s.width ||
               hoverPos.x + cursorWidth <= s.x ||
               hoverPos.y >= s.y + s.height ||
@@ -1267,26 +1288,24 @@ function InteractionPlane({
       }
 
       // 3. Energy Field (Center Check)
-      if (isValid) {
-        if (!energyTiles.has("ALL")) {
-          // Check center of the new building
-          const cx = hoverPos.x + cursorWidth / 2;
-          const cy = hoverPos.y + cursorHeight / 2;
-          // We can check if the *center tile* is in the set.
-          // Since our set stores integers, we floor.
-          // But our check in backend is distance based.
-          // Let's replicate the distance check against the tiles?
-          // No, that's inefficient.
-          // Check if the center tile is in the "validTiles" set.
-          // validTiles contains all 1x1 tiles that are valid.
-          // So if `floor(cx), floor(cy)` is in set, it's valid.
-          const centerKey = `${Math.floor(cx)},${Math.floor(cy)}`;
+      if (isValid && !energyTiles.has("ALL")) {
+        // Check center of the new building
+        const cx = hoverPos.x + cursorWidth / 2;
+        const cy = hoverPos.y + cursorHeight / 2;
+        // We can check if the *center tile* is in the set.
+        // Since our set stores integers, we floor.
+        // But our check in backend is distance based.
+        // Let's replicate the distance check against the tiles?
+        // No, that's inefficient.
+        // Check if the center tile is in the "validTiles" set.
+        // validTiles contains all 1x1 tiles that are valid.
+        // So if `floor(cx), floor(cy)` is in set, it's valid.
+        const centerKey = `${Math.floor(cx)},${Math.floor(cy)}`;
 
-          // Actually, our set might be sparse or slightly different due to rounding.
-          // But visually, if the center is over a green tile, it should be valid.
-          if (!energyTiles.has(centerKey)) {
-             isValid = false;
-          }
+        // Actually, our set might be sparse or slightly different due to rounding.
+        // But visually, if the center is over a green tile, it should be valid.
+        if (!energyTiles.has(centerKey)) {
+          isValid = false;
         }
       }
 
@@ -1294,7 +1313,6 @@ function InteractionPlane({
         cursorColor = "red";
       }
     }
-
   } else if (selectedTroopId) {
     cursorColor = "red"; // Target reticle
   }
@@ -1352,7 +1370,11 @@ export function GameCanvas({
 }: ExtendedGameCanvasProps) {
   const placeBase = useMutation(api.game.placeBase);
   const isDraggingRef = useRef(false);
-  const [flyTo, setFlyTo] = useState<{ x: number; y: number; zoom?: number } | null>(null);
+  const [flyTo, setFlyTo] = useState<{
+    x: number;
+    y: number;
+    zoom?: number;
+  } | null>(null);
   const lastZoomedPhaseRef = useRef<string | null>(null);
 
   // Handle Zoom Trigger
@@ -1363,9 +1385,15 @@ export function GameCanvas({
     // Also if we load directly into simulation.
 
     // If we are in simulation, and we haven't handled this transition yet:
-    if (game.phase === "simulation" && lastZoomedPhaseRef.current !== "simulation" && myPlayerId) {
+    if (
+      game.phase === "simulation" &&
+      lastZoomedPhaseRef.current !== "simulation" &&
+      myPlayerId
+    ) {
       // Find my base
-      const myBase = buildings.find(b => b.ownerId === myPlayerId && b.type === "base_central");
+      const myBase = buildings.find(
+        (b) => b.ownerId === myPlayerId && b.type === "base_central"
+      );
       if (myBase) {
         // Calculate center
         const cx = myBase.x + myBase.width / 2;
@@ -1378,13 +1406,12 @@ export function GameCanvas({
         lastZoomedPhaseRef.current = "simulation";
       }
     } else if (game.phase !== "simulation") {
-        // Reset if we go back to lobby/placement (unlikely but good hygiene)
-        if (lastZoomedPhaseRef.current === "simulation") {
-            lastZoomedPhaseRef.current = null;
-        }
+      // Reset if we go back to lobby/placement (unlikely but good hygiene)
+      if (lastZoomedPhaseRef.current === "simulation") {
+        lastZoomedPhaseRef.current = null;
+      }
     }
   }, [game.phase, buildings, myPlayerId]);
-
 
   const handlePlace = async (x: number, y: number) => {
     if (game.phase === "placement") {
@@ -1406,8 +1433,13 @@ export function GameCanvas({
 
   // Calculate Energy Tiles
   const energyTiles = useMemo(() => {
-    if (!isBuildMode || !myPlayerId) return new Set<string>();
-    return getEnergyTiles(buildings, myPlayerId, staticMap.width, staticMap.height);
+    if (!(isBuildMode && myPlayerId)) return new Set<string>();
+    return getEnergyTiles(
+      buildings,
+      myPlayerId,
+      staticMap.width,
+      staticMap.height
+    );
   }, [buildings, isBuildMode, myPlayerId, staticMap]);
 
   return (
@@ -1459,6 +1491,8 @@ export function GameCanvas({
       {entities && <IncomeIndicator entities={entities} />}
 
       <InteractionPlane
+        buildings={buildings}
+        energyTiles={energyTiles}
         game={game}
         height={staticMap.height}
         isBuildMode={isBuildMode}
@@ -1467,10 +1501,8 @@ export function GameCanvas({
         onMoveTroop={onMoveTroop}
         selectedBuilding={selectedBuilding}
         selectedTroopId={selectedTroopId}
-        width={staticMap.width}
         staticMap={staticMap}
-        buildings={buildings}
-        energyTiles={energyTiles}
+        width={staticMap.width}
       />
     </Canvas>
   );

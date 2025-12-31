@@ -155,7 +155,6 @@ export function ModeSelector({ user }: ModeSelectorProps) {
           {/* Tabs */}
           <div className="flex gap-4 border-muted border-b-2 pb-2">
             <button
-              type="button"
               className={cn(
                 "px-4 py-2 font-mono text-sm uppercase transition-colors hover:text-primary",
                 activeTab === "multiplayer"
@@ -163,18 +162,19 @@ export function ModeSelector({ user }: ModeSelectorProps) {
                   : "text-muted-foreground"
               )}
               onClick={() => setActiveTab("multiplayer")}
+              type="button"
             >
               Multiplayer
             </button>
             <button
-              type="button"
               className={cn(
                 "cursor-not-allowed px-4 py-2 font-mono text-muted-foreground/50 text-sm uppercase transition-colors",
                 activeTab === "private"
                   ? "-mb-2.5 border-primary border-b-2 text-primary"
                   : ""
-              )} // Disabled for now visually or functionally
-              onClick={() => setActiveTab("private")}
+              )}
+              onClick={() => setActiveTab("private")} // Disabled for now visually or functionally
+              type="button"
             >
               Private (Locked)
             </button>

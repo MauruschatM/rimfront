@@ -2,6 +2,11 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { internalMutation, mutation, query } from "./_generated/server";
+import {
+  calculatePoweredBuildings,
+  handleCapture,
+  transferOwnership,
+} from "./lib/gameState";
 import { createCollisionMap, findPath } from "./lib/pathfinding";
 
 // 5x5 Central Base
@@ -106,11 +111,11 @@ async function eliminatePlayer(
     }
   }
 
-  const troupes = await ctx.db
-    .query("troups")
+  const troops = await ctx.db
+    .query("troops")
     .withIndex("by_gameId", (q: any) => q.eq("gameId", gameId))
     .collect();
-  for (const t of troupes) {
+  for (const t of troops) {
     if (t.ownerId === victimId) {
       await ctx.db.patch(t._id, { ownerId: conquerorId });
     }
@@ -131,7 +136,7 @@ type Entity = {
   gameId: Id<"games">;
   ownerId: Id<"players">;
   familyId?: Id<"families">;
-  troupeId?: Id<"troups">;
+  troopId?: Id<"troops">;
   homeId?: string;
   type: string;
   state: string;
@@ -153,8 +158,8 @@ type Entity = {
   nextPathAttempt?: number;
 };
 
-type Troupe = {
-  _id: Id<"troups">;
+type Troop = {
+  _id: Id<"troops">;
   gameId: Id<"games">;
   ownerId: Id<"players">;
   barracksId: string;
@@ -796,7 +801,7 @@ function categorizeBuildings(buildings: Building[]) {
 async function processActiveEntities(
   ctx: { db: any },
   activeEntities: Entity[],
-  troupes: Troupe[],
+  troops: Troop[],
   now: number,
   mapWidth: number,
   mapHeight: number,
@@ -806,7 +811,8 @@ async function processActiveEntities(
   playerCredits: Record<string, number>,
   spatialHash: SpatialHash,
   entities: Entity[],
-  isRoundTick: boolean
+  isRoundTick: boolean,
+  poweredBuildingIds: Set<string>
 ) {
   const deletedEntityIds = new Set<string>();
 
@@ -814,10 +820,10 @@ async function processActiveEntities(
     if (deletedEntityIds.has(entity._id)) continue;
 
     let dirty = false;
-    const troupe = entity.troupeId
-      ? troupes.find((t) => t._id === entity.troupeId)
+    const troop = entity.troopId
+      ? troops.find((t) => t._id === entity.troopId)
       : undefined;
-    const targetPos = troupe?.targetPos;
+    const targetPos = troop?.targetPos;
 
     // Movement Logic
     if (
@@ -896,7 +902,14 @@ async function processActiveEntities(
     }
 
     // Award working credits only on round ticks (every 50 ticks = 5 seconds)
-    if (entity.state === "working" && entity.ownerId && isRoundTick) {
+    // AND if the workplace is POWERED
+    if (
+      entity.state === "working" &&
+      entity.ownerId &&
+      isRoundTick &&
+      entity.workplaceId &&
+      poweredBuildingIds.has(entity.workplaceId)
+    ) {
       playerCredits[entity.ownerId] =
         (playerCredits[entity.ownerId] || 0) + 1000;
     }
@@ -921,7 +934,8 @@ async function processInsideEntities(
   workshops: Building[],
   houses: Building[],
   playerCredits: Record<string, number>,
-  isRoundTick: boolean
+  isRoundTick: boolean,
+  poweredBuildingIds: Set<string>
 ) {
   for (const entity of insideEntities) {
     let dirty = false;
@@ -948,7 +962,14 @@ async function processInsideEntities(
     }
 
     // Award working credits only on round ticks (every 50 ticks = 5 seconds)
-    if (entity.state === "working" && entity.ownerId && isRoundTick) {
+    // AND if workplace is powered
+    if (
+      entity.state === "working" &&
+      entity.ownerId &&
+      isRoundTick &&
+      entity.workplaceId &&
+      poweredBuildingIds.has(entity.workplaceId)
+    ) {
       playerCredits[entity.ownerId] =
         (playerCredits[entity.ownerId] || 0) + 1000;
     }
@@ -966,11 +987,12 @@ async function handleSpawning(
   houses: Building[],
   barracks: Building[],
   families: Family[],
-  troupes: Troupe[],
-  entities: Entity[]
+  troops: Troop[],
+  entities: Entity[],
+  poweredBuildingIds: Set<string>
 ) {
   const knownFamilies = new Set(families.map((f) => f.homeId));
-  const knownTroops = new Set(troupes.map((t) => t.barracksId));
+  const knownTroops = new Set(troops.map((t) => t.barracksId));
 
   for (const b of barracks) {
     if (
@@ -980,7 +1002,10 @@ async function handleSpawning(
       continue;
     }
 
-    const troupeId = await ctx.db.insert("troups", {
+    // Only spawn group if barracks is powered
+    if (!poweredBuildingIds.has(b.id)) continue;
+
+    const troopId = await ctx.db.insert("troops", {
       gameId,
       barracksId: b.id,
       ownerId: b.ownerId,
@@ -995,7 +1020,7 @@ async function handleSpawning(
     await ctx.db.insert("entities", {
       gameId,
       ownerId: b.ownerId,
-      troupeId,
+      troopId,
       type: "commander",
       state: "idle",
       x: b.x + 1,
@@ -1007,6 +1032,9 @@ async function handleSpawning(
 
   for (const h of houses) {
     if (h.constructionEnd && now < h.constructionEnd) continue;
+    // Only spawn family if house is powered
+    if (!poweredBuildingIds.has(h.id)) continue;
+
     if (!knownFamilies.has(h.id)) {
       await ctx.db.insert("families", {
         gameId,
@@ -1019,16 +1047,19 @@ async function handleSpawning(
   }
 
   // Refresh data for growth logic
-  const troupesUpdated = (await ctx.db
-    .query("troups")
+  const troopsUpdated = (await ctx.db
+    .query("troops")
     .withIndex("by_gameId", (q: any) => q.eq("gameId", gameId))
-    .collect()) as Troupe[];
+    .collect()) as Troop[];
   const familiesUpdated = (await ctx.db
     .query("families")
     .withIndex("by_gameId", (q: any) => q.eq("gameId", gameId))
     .collect()) as Family[];
 
   for (const fam of familiesUpdated) {
+    // Check if home is powered
+    if (!poweredBuildingIds.has(fam.homeId)) continue;
+
     const memberCount = entities.filter((e) => e.familyId === fam._id).length;
     // Only spawn if under capacity AND 30 seconds have passed
     if (memberCount < 4) {
@@ -1053,24 +1084,27 @@ async function handleSpawning(
     }
   }
 
-  for (const troupe of troupesUpdated) {
+  for (const troop of troopsUpdated) {
+    // Check if barracks is powered
+    if (!poweredBuildingIds.has(troop.barracksId)) continue;
+
     const commander = entities.find(
-      (e) => e.troupeId === troupe._id && e.type === "commander"
+      (e) => e.troopId === troop._id && e.type === "commander"
     );
 
     // Only spawn soldiers if under capacity AND 30 seconds have passed
-    // Limit total troupe members (soldiers + commander) to 4
+    // Limit total troop members (soldiers + commander) to 4
     if (
       commander &&
-      entities.filter((e) => e.troupeId === troupe._id).length < 4
+      entities.filter((e) => e.troopId === troop._id).length < 4
     ) {
-      const lastSpawn = troupe.lastSpawnTime || 0;
+      const lastSpawn = troop.lastSpawnTime || 0;
       if (now > lastSpawn + SPAWN_INTERVAL_MS) {
         const offset = {
           x: (Math.random() - 0.5) * 1,
           y: Math.random() * 1,
         };
-        const barracksObj = barracks.find((b) => b.id === troupe.barracksId);
+        const barracksObj = barracks.find((b) => b.id === troop.barracksId);
         const spawnX = barracksObj ? barracksObj.x + 1 : commander.x;
         const spawnY = barracksObj
           ? barracksObj.y + barracksObj.height
@@ -1078,8 +1112,8 @@ async function handleSpawning(
 
         const newSoldier = {
           gameId,
-          ownerId: troupe.ownerId,
-          troupeId: troupe._id,
+          ownerId: troop.ownerId,
+          troopId: troop._id,
           type: "soldier",
           state: "idle",
           x: spawnX + offset.x,
@@ -1089,7 +1123,7 @@ async function handleSpawning(
         };
         await ctx.db.insert("entities", newSoldier);
         entities.push(newSoldier as any); // Update local array to prevent logic delay
-        await ctx.db.patch(troupe._id, { lastSpawnTime: now });
+        await ctx.db.patch(troop._id, { lastSpawnTime: now });
       }
     }
   }
@@ -1501,79 +1535,61 @@ export const tick = internalMutation({
       .collect()) as Entity[];
 
     // 2. Capture Logic
-    let mapDirty = false;
+    const captureEvents = handleCapture(mapDoc.buildings, entities, now);
+
+    if (captureEvents.length > 0) {
+      await ctx.db.patch(mapDoc._id, { buildings: mapDoc.buildings });
+    } else {
+      // Even if no capture finished, we need to save capture progress state (captureStart, etc.)
+      // Optimization: We could check if any building changed state.
+      // For now, let's just save if handleCapture might have mutated something?
+      // handleCapture mutates buildings in place.
+      // We should check if 'dirty' - but `handleCapture` doesn't return dirty flag for progress.
+      // Let's assume progress happens often during combat and save.
+      // Or better: We can iterate and see if any captureStart exists.
+      const isDirty = mapDoc.buildings.some(
+        (b: any) => b.captureStart !== undefined || b.capturingOwnerId
+      );
+      if (isDirty) {
+        await ctx.db.patch(mapDoc._id, { buildings: mapDoc.buildings });
+      }
+    }
+
+    // Process Completed Captures
     const pendingEliminations: {
       victimId: Id<"players">;
       conquerorId: Id<"players">;
     }[] = [];
 
-    // Filter units that can capture (e.g. soldiers, commanders)
-    const combatUnits = entities.filter(
-      (e) => (e.type === "soldier" || e.type === "commander") && !e.isInside
-    );
+    for (const event of captureEvents) {
+      if (event.isBase) {
+        // Base Captured -> Elimination
+        pendingEliminations.push({
+          victimId: event.victimId as Id<"players">,
+          conquerorId: event.conquerorId as Id<"players">,
+        });
+      } else {
+        // Normal Building Captured -> Transfer Ownership
+        const b = mapDoc.buildings.find((b: any) => b.id === event.buildingId);
+        if (b) {
+          b.ownerId = event.conquerorId;
+          // Reset capture state (already done in handleCapture, but good for safety)
+          b.captureStart = undefined;
+          b.capturingOwnerId = undefined;
 
-    for (const b of mapDoc.buildings) {
-      if (b.type === "base_central") {
-        // Find enemy units near base (1 tile range = distance < 2? No, 1 tile means adjacent)
-        // Base is 5x5. Units at x,y.
-        // Base Zone: x to x+width, y to y+height.
-        // Range 1 means: x-1 to x+width+1, y-1 to y+height+1.
-
-        let capturingPlayerId: string | null = null;
-        let ownerDefending = false;
-
-        // Check for units in range
-        for (const unit of combatUnits) {
-          if (
-            unit.x >= b.x - 1 &&
-            unit.x <= b.x + b.width && // x + width is exclusive usually, but let's be generous: <= x+width is effectively +1 tile right
-            unit.y >= b.y - 1 &&
-            unit.y <= b.y + b.height
-          ) {
-            if (unit.ownerId === b.ownerId) {
-              ownerDefending = true;
-            } else {
-              // Found enemy
-              // If multiple enemies from different teams, first one found wins priority?
-              // Simplifying: Last one found sets capturing ID, or we check distinct teams.
-              // For now, assume first enemy detected starts capture.
-              if (!capturingPlayerId) capturingPlayerId = unit.ownerId;
-            }
-          }
-        }
-
-        if (capturingPlayerId && !ownerDefending) {
-          // Capture in progress
-          if (b.capturingOwnerId === capturingPlayerId) {
-            // Continue capture
-            if (b.captureStart && now - b.captureStart >= 30_000) {
-              // Trigger Elimination
-              pendingEliminations.push({
-                victimId: b.ownerId as Id<"players">,
-                conquerorId: capturingPlayerId as Id<"players">,
-              });
-              b.captureStart = undefined;
-              b.capturingOwnerId = undefined;
-              mapDirty = true;
-            }
-          } else {
-            // Start new capture
-            b.capturingOwnerId = capturingPlayerId;
-            b.captureStart = now;
-            mapDirty = true;
-          }
-        } else {
-          // Reset if defended or no enemies
-          if (b.captureStart || b.capturingOwnerId) {
-            b.captureStart = undefined;
-            b.capturingOwnerId = undefined;
-            mapDirty = true;
-          }
+          // Transfer Linked Units/Groups
+          await transferOwnership(
+            ctx,
+            args.gameId,
+            event.buildingId,
+            event.conquerorId as Id<"players">
+          );
         }
       }
     }
 
-    if (mapDirty) {
+    // Save map again if we modified owners above
+    if (captureEvents.length > 0) {
       await ctx.db.patch(mapDoc._id, { buildings: mapDoc.buildings });
     }
 
@@ -1585,10 +1601,10 @@ export const tick = internalMutation({
       .query("families")
       .withIndex("by_gameId", (q) => q.eq("gameId", args.gameId))
       .collect()) as Family[];
-    const troupes = (await ctx.db
-      .query("troups")
+    const troops = (await ctx.db
+      .query("troops")
       .withIndex("by_gameId", (q) => q.eq("gameId", args.gameId))
-      .collect()) as Troupe[];
+      .collect()) as Troop[];
 
     const playerCredits: Record<string, number> = {};
     for (const p of players) playerCredits[p._id] = 0;
@@ -1601,6 +1617,9 @@ export const tick = internalMutation({
     const { houses, workshops, barracks } = categorizeBuildings(
       mapDoc.buildings
     );
+
+    // 2.1 Power Grid Logic
+    const poweredBuildingIds = calculatePoweredBuildings(mapDoc.buildings);
 
     // Build Spatial Hash
     const spatialHash = new SpatialHash(10); // 10x10 chunks
@@ -1616,7 +1635,7 @@ export const tick = internalMutation({
     await processActiveEntities(
       ctx,
       entities.filter((e) => !e.isInside),
-      troupes,
+      troops,
       now,
       mapDoc.width,
       mapDoc.height,
@@ -1626,7 +1645,8 @@ export const tick = internalMutation({
       playerCredits,
       spatialHash,
       entities,
-      isRoundTick
+      isRoundTick,
+      poweredBuildingIds
     );
     await processInsideEntities(
       ctx,
@@ -1635,7 +1655,8 @@ export const tick = internalMutation({
       workshops,
       houses,
       playerCredits,
-      isRoundTick
+      isRoundTick,
+      poweredBuildingIds
     );
     await handleSpawning(
       ctx,
@@ -1644,8 +1665,9 @@ export const tick = internalMutation({
       houses,
       barracks,
       families,
-      troupes,
-      entities
+      troops,
+      entities,
+      poweredBuildingIds
     );
 
     for (const p of players) {
@@ -1710,11 +1732,11 @@ export const deleteGame = mutation({
       .collect();
     for (const f of families) await ctx.db.delete(f._id);
 
-    const troupes = await ctx.db
-      .query("troups")
+    const troops = await ctx.db
+      .query("troops")
       .withIndex("by_gameId", (q) => q.eq("gameId", args.gameId))
       .collect();
-    for (const t of troupes) await ctx.db.delete(t._id);
+    for (const t of troops) await ctx.db.delete(t._id);
 
     await ctx.db.delete(game._id);
   },
@@ -1737,7 +1759,7 @@ export const getGameState = query({
     let planetType = "";
     let entities: any[] = [];
     let families: any[] = [];
-    let troupes: any[] = [];
+    let troops: any[] = [];
 
     if (game.phase !== "lobby") {
       const mapDoc = await ctx.db
@@ -1756,8 +1778,8 @@ export const getGameState = query({
         .query("families")
         .withIndex("by_gameId", (q) => q.eq("gameId", args.gameId))
         .collect();
-      troupes = await ctx.db
-        .query("troups")
+      troops = await ctx.db
+        .query("troops")
         .withIndex("by_gameId", (q) => q.eq("gameId", args.gameId))
         .collect();
     }
@@ -1769,7 +1791,7 @@ export const getGameState = query({
       planetType,
       entities,
       families,
-      troupes,
+      troops,
     };
   },
 });
@@ -1803,7 +1825,7 @@ export const getStaticMap = query({
 export const moveTroop = mutation({
   args: {
     gameId: v.id("games"),
-    troupeId: v.id("troups"),
+    troopId: v.id("troops"),
     targetX: v.number(),
     targetY: v.number(),
   },
@@ -1811,8 +1833,8 @@ export const moveTroop = mutation({
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Unauthorized");
 
-    const troupe = await ctx.db.get(args.troupeId);
-    if (!troupe) throw new Error("Troop not found");
+    const troop = await ctx.db.get(args.troopId);
+    if (!troop) throw new Error("Troop not found");
 
     // Check ownership
     const player = await ctx.db
@@ -1826,10 +1848,10 @@ export const moveTroop = mutation({
       .first();
     if (!player) throw new Error("Player not found");
 
-    if (troupe.ownerId !== player._id) throw new Error("Not your troop");
+    if (troop.ownerId !== player._id) throw new Error("Not your troop");
 
     // Update Target
-    await ctx.db.patch(troupe._id, {
+    await ctx.db.patch(troop._id, {
       targetPos: { x: args.targetX, y: args.targetY },
       state: "moving",
     });
@@ -1837,7 +1859,7 @@ export const moveTroop = mutation({
     // Reset members to ensure they pathfind
     const members = await ctx.db
       .query("entities")
-      .withIndex("by_troupeId", (q) => q.eq("troupeId", troupe._id))
+      .withIndex("by_troopId", (q) => q.eq("troopId", troop._id))
       .collect();
 
     for (const member of members) {

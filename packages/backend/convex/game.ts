@@ -569,10 +569,9 @@ function handleIdleLogic(
         member.state = "moving";
         member.nextPathAttempt = undefined; // Success!
         return true;
-      } else {
-        // Pathfinding failed: Backoff for 2 seconds
-        member.nextPathAttempt = now + 2000;
       }
+      // Pathfinding failed: Backoff for 2 seconds
+      member.nextPathAttempt = now + 2000;
     }
   }
 
@@ -1277,7 +1276,9 @@ export const placeBuilding = mutation({
     }
 
     if (!inEnergyField) {
-      throw new Error("Must place within 4-tile energy field of existing buildings");
+      throw new Error(
+        "Must place within 4-tile energy field of existing buildings"
+      );
     }
 
     for (const b of map.buildings) {

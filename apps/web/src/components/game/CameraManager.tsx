@@ -87,17 +87,16 @@ export function CameraManager({
           (camera.position.y - target.y) ** 2
       );
       // Stop if close enough
-      if (dist < 0.5 && (!target.zoom || Math.abs(camera.zoom - target.zoom) < 0.5)) {
+      if (
+        dist < 0.5 &&
+        (!target.zoom || Math.abs(camera.zoom - target.zoom) < 0.5)
+      ) {
         isFlyingRef.current = false;
         flyTargetRef.current = null;
       }
 
       // Clamp to bounds
-      camera.position.x = THREE.MathUtils.clamp(
-        camera.position.x,
-        0,
-        mapWidth
-      );
+      camera.position.x = THREE.MathUtils.clamp(camera.position.x, 0, mapWidth);
       camera.position.y = THREE.MathUtils.clamp(
         camera.position.y,
         0,

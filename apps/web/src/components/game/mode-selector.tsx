@@ -222,28 +222,24 @@ export function ModeSelector({ user }: ModeSelectorProps) {
                 label="Free For All"
                 onClick={() => setSelectedSubMode("ffa")}
                 selected={selectedSubMode === "ffa"}
-                value="ffa"
               />
               <SubModeCard
                 icon={<Users className="h-6 w-6" />}
                 label="Duos"
                 onClick={() => setSelectedSubMode("duos")}
                 selected={selectedSubMode === "duos"}
-                value="duos"
               />
               <SubModeCard
                 icon={<Shield className="h-6 w-6" />}
                 label="Squads"
                 onClick={() => setSelectedSubMode("squads")}
                 selected={selectedSubMode === "squads"}
-                value="squads"
               />
               <SubModeCard
                 icon={<Swords className="h-6 w-6" />}
                 label="2 Teams"
                 onClick={() => setSelectedSubMode("teams")}
                 selected={selectedSubMode === "teams"}
-                value="teams"
               />
             </div>
           </div>

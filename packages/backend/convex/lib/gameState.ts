@@ -1,4 +1,5 @@
 import type { Id } from "../_generated/dataModel";
+import type { SpatialHash } from "./spatial";
 
 interface Building {
   id: string;
@@ -13,7 +14,6 @@ interface Building {
   captureStart?: number;
   capturingOwnerId?: string;
 }
-
 
 // --------------------------------------------------------------------------
 // POWER / ENERGY SYSTEM
@@ -107,21 +107,16 @@ export interface CaptureEvent {
  * The function mutates the `buildings` array in-place (updating capture timers).
  *
  * @param buildings List of buildings
- * @param entities List of entities (to check proximity)
+ * @param spatialHash SpatialHash containing active entities (soldiers/commanders)
  * @param now Current timestamp
  * @returns Array of events for buildings that finished capturing this tick
  */
 export function handleCapture(
   buildings: Building[],
-  entities: any[], // using any to avoid circular type deps, but expects {x,y,ownerId,type,isInside}
+  spatialHash: SpatialHash,
   now: number
 ): CaptureEvent[] {
   const completedCaptures: CaptureEvent[] = [];
-
-  // Filter units that can capture (soldiers, commanders)
-  const combatUnits = entities.filter(
-    (e) => (e.type === "soldier" || e.type === "commander") && !e.isInside
-  );
 
   for (const b of buildings) {
     // Determine range
@@ -130,8 +125,22 @@ export function handleCapture(
     let capturingPlayerId: string | null = null;
     let ownerDefending = false;
 
-    // Check for units in range
-    for (const unit of combatUnits) {
+    // Use SpatialHash to find units near the building
+    // Calculate center and radius to cover the building + 1 tile buffer
+    const cx = b.x + b.width / 2;
+    const cy = b.y + b.height / 2;
+    // Radius must cover the corners. Distance from center to corner of (width+2, height+2) box.
+    // Half dimensions: (w+2)/2, (h+2)/2
+    const radius =
+      Math.sqrt(((b.width + 2) / 2) ** 2 + ((b.height + 2) / 2) ** 2) + 0.5;
+
+    const nearbyUnits = spatialHash.query(cx, cy, radius);
+
+    for (const unit of nearbyUnits) {
+      // Filter for soldiers/commanders that are NOT inside (spatial hash usually excludes inside units)
+      if (unit.type !== "soldier" && unit.type !== "commander") continue;
+
+      // Precise box check
       if (
         unit.x >= b.x - 1 &&
         unit.x <= b.x + b.width &&

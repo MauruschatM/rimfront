@@ -1,4 +1,0 @@
----
-alwaysApply: true
----
-Use Convex in packages/backend as a backend. Always use the mcp to get up-to-date documentation.

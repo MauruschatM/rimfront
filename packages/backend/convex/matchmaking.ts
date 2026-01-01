@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
-import { mutation, query } from "./_generated/server";
+import { mutation } from "./_generated/server";
 import { generateMap, PLANETS } from "./lib/mapgen";
 
 export const findOrCreateLobby = mutation({
@@ -11,12 +11,6 @@ export const findOrCreateLobby = mutation({
     userId: v.optional(v.string()), // Passed from client if needed, or derived from context
   },
   handler: async (ctx, args) => {
-    // Security: Validate player name
-    const cleanName = args.playerName.trim();
-    if (cleanName.length < 2 || cleanName.length > 20) {
-      throw new Error("Player name must be between 2 and 20 characters");
-    }
-
     // 1. Look for an existing waiting game of this type/subMode
     const waitingGames = await ctx.db
       .query("games")
@@ -118,14 +112,13 @@ export const findOrCreateLobby = mutation({
       }
     }
 
-    const playerId = await ctx.db.insert("players", {
+    await ctx.db.insert("players", {
       gameId: gameIdToJoin,
       userId: args.userId,
       isBot: false,
-      name: cleanName,
+      name: args.playerName,
       teamId,
       credits: 0,
-      inflation: 1.0,
     });
 
     // Schedule game check
@@ -142,7 +135,7 @@ export const findOrCreateLobby = mutation({
       gameId: gameIdToJoin,
     });
 
-    return { gameId: gameIdToJoin, playerId };
+    return { gameId: gameIdToJoin };
   },
 });
 
@@ -199,7 +192,6 @@ export const checkGameStart = mutation({
                 name: `Bot-${Math.floor(Math.random() * 1000)}`,
                 teamId: botTeam,
                 credits: 0,
-                inflation: 1.0,
               });
             }
           }
@@ -213,7 +205,6 @@ export const checkGameStart = mutation({
               name: `Bot-${Math.floor(Math.random() * 1000)}`,
               teamId: undefined,
               credits: 0,
-              inflation: 1.0,
             });
           }
         }
@@ -227,42 +218,16 @@ export const checkGameStart = mutation({
       // Generate Map
       const { tiles, structures } = generateMap(planetType, 256, 256);
 
-      // Save Map metadata (without tiles)
+      // Save Map
       await ctx.db.insert("maps", {
         gameId: game._id,
         width: 256,
         height: 256,
+        tiles,
         structures,
         buildings: [],
         planetType,
       });
-
-      // Split tiles into 16 chunks (4x4 grid, each 64x64 = 4096 tiles)
-      const CHUNK_SIZE = 64;
-      const CHUNKS_PER_SIDE = 4;
-
-      for (let chunkY = 0; chunkY < CHUNKS_PER_SIDE; chunkY++) {
-        for (let chunkX = 0; chunkX < CHUNKS_PER_SIDE; chunkX++) {
-          const chunkTiles: number[] = [];
-
-          // Extract tiles for this chunk
-          for (let y = 0; y < CHUNK_SIZE; y++) {
-            for (let x = 0; x < CHUNK_SIZE; x++) {
-              const globalX = chunkX * CHUNK_SIZE + x;
-              const globalY = chunkY * CHUNK_SIZE + y;
-              const tileIndex = globalY * 256 + globalX;
-              chunkTiles.push(tiles[tileIndex]);
-            }
-          }
-
-          await ctx.db.insert("chunks", {
-            gameId: game._id,
-            chunkX,
-            chunkY,
-            tiles: chunkTiles,
-          });
-        }
-      }
 
       // Update game status & Phase
       await ctx.db.patch(game._id, {
@@ -286,124 +251,5 @@ export const checkGameStart = mutation({
       timeLeft: Math.max(0, 60_000 - timeElapsed),
       currentPlayers: players.length,
     };
-  },
-});
-
-export const getLobbyStatus = query({
-  args: {
-    gameId: v.id("games"),
-  },
-  returns: v.union(
-    v.object({
-      status: v.literal("waiting"),
-      playerCount: v.number(),
-      maxPlayers: v.number(),
-      startTime: v.number(),
-      timeLeft: v.number(),
-    }),
-    v.object({
-      status: v.literal("started"),
-    }),
-    v.null()
-  ),
-  handler: async (ctx, args) => {
-    const game = await ctx.db.get(args.gameId);
-    if (!game) {
-      return null;
-    }
-
-    // Game already started
-    if (game.status !== "waiting") {
-      return { status: "started" as const };
-    }
-
-    const players = await ctx.db
-      .query("players")
-      .filter((q) => q.eq(q.field("gameId"), game._id))
-      .collect();
-
-    const now = Date.now();
-    const timeElapsed = now - game.createdAt;
-    const timeLeft = Math.max(0, 60_000 - timeElapsed);
-
-    return {
-      status: "waiting" as const,
-      playerCount: players.length,
-      maxPlayers: 16,
-      startTime: game.createdAt,
-      timeLeft,
-    };
-  },
-});
-
-export const leaveLobby = mutation({
-  args: {
-    gameId: v.id("games"),
-    playerId: v.id("players"),
-  },
-  handler: async (ctx, args) => {
-    const player = await ctx.db.get(args.playerId);
-    if (!player) return;
-
-    if (player.gameId !== args.gameId) {
-      throw new Error("Player is not in this game");
-    }
-
-    const game = await ctx.db.get(args.gameId);
-    if (!game || game.status !== "waiting") {
-      throw new Error("Can only leave a waiting game");
-    }
-
-    // Delete the player
-    await ctx.db.delete(args.playerId);
-
-    // Check if any players remain
-    const remainingPlayers = await ctx.db
-      .query("players")
-      .filter((q) => q.eq(q.field("gameId"), args.gameId))
-      .collect();
-
-    if (remainingPlayers.length === 0) {
-      // Delete the game if no players left
-      await ctx.runMutation(api.game.deleteGame, { gameId: args.gameId });
-    }
-
-    return { success: true };
-  },
-});
-
-export const forceStartLobby = mutation({
-  args: {
-    gameId: v.id("games"),
-    playerId: v.id("players"),
-  },
-  returns: v.object({ success: v.boolean() }),
-  handler: async (ctx, args) => {
-    const player = await ctx.db.get(args.playerId);
-    if (!player) {
-      throw new Error("Player not found");
-    }
-
-    if (player.gameId !== args.gameId) {
-      throw new Error("Player is not in this game");
-    }
-
-    const game = await ctx.db.get(args.gameId);
-    if (!game || game.status !== "waiting") {
-      throw new Error("Game is not in waiting state");
-    }
-
-    // Force the game check to start the game immediately
-    // Temporarily update createdAt to make the timer expire
-    await ctx.db.patch(args.gameId, {
-      createdAt: Date.now() - 120_000, // Set to 2 minutes ago to trigger start
-    });
-
-    // Run the game start check
-    await ctx.runMutation(api.matchmaking.checkGameStart, {
-      gameId: args.gameId,
-    });
-
-    return { success: true };
   },
 });

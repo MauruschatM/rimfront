@@ -3,7 +3,7 @@
 import { api } from "@packages/backend/convex/_generated/api";
 import type { Id } from "@packages/backend/convex/_generated/dataModel";
 import { useMutation, useQuery } from "convex/react";
-import { Clock, Globe, Play, Shield, Swords, User, Users } from "lucide-react";
+import { Globe, Play, Shield, Swords, User, Users } from "lucide-react";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 import { Button } from "@/components/ui/button";
@@ -27,33 +27,14 @@ export function ModeSelector({ user }: ModeSelectorProps) {
   const [status, setStatus] = React.useState<"idle" | "searching" | "joined">(
     "idle"
   );
-  const [gameId, setGameId] = React.useState<Id<"games"> | null>(null);
-  const [playerId, setPlayerId] = React.useState<Id<"players"> | null>(null);
-  const [displayTimeLeft, setDisplayTimeLeft] = React.useState(60);
+  const [gameId, setGameId] = React.useState<string | null>(null);
 
   const findOrCreateLobby = useMutation(api.matchmaking.findOrCreateLobby);
-  const leaveLobby = useMutation(api.matchmaking.leaveLobby);
-  const forceStartLobby = useMutation(api.matchmaking.forceStartLobby);
-
-  // Query lobby status when joined
   const lobbyStatus = useQuery(
     api.matchmaking.getLobbyStatus,
-    gameId ? { gameId } : "skip"
+    gameId ? { gameId: gameId as Id<"games"> } : "skip"
   );
 
-  // Update local timer for smooth countdown
-  React.useEffect(() => {
-    if (lobbyStatus?.status === "waiting") {
-      setDisplayTimeLeft(Math.ceil(lobbyStatus.timeLeft / 1000));
-
-      const interval = setInterval(() => {
-        setDisplayTimeLeft((t) => Math.max(0, t - 1));
-      }, 1000);
-      return () => clearInterval(interval);
-    }
-  }, [lobbyStatus]);
-
-  // Navigate to game when it starts
   React.useEffect(() => {
     if (lobbyStatus?.status === "started" && gameId) {
       router.push(`/game/${gameId}`);
@@ -76,7 +57,6 @@ export function ModeSelector({ user }: ModeSelectorProps) {
         userId: user.id,
       });
       setGameId(result.gameId);
-      setPlayerId(result.playerId);
       setStatus("joined");
       setIsOpen(false);
     } catch (error) {
@@ -84,40 +64,6 @@ export function ModeSelector({ user }: ModeSelectorProps) {
       setStatus("idle");
     }
   };
-
-  const handleLeave = async () => {
-    if (!(gameId && playerId)) return;
-
-    try {
-      await leaveLobby({ gameId, playerId });
-      setGameId(null);
-      setPlayerId(null);
-      setStatus("idle");
-    } catch (error) {
-      console.error("Failed to leave lobby:", error);
-    }
-  };
-
-  const handleForceStart = async () => {
-    if (!(gameId && playerId)) return;
-
-    try {
-      await forceStartLobby({ gameId, playerId });
-    } catch (error) {
-      console.error("Failed to start lobby:", error);
-    }
-  };
-
-  // Format time: show minutes if >= 100 seconds, otherwise show seconds
-  const formatTime = (seconds: number) => {
-    if (seconds >= 100) {
-      const minutes = Math.ceil(seconds / 60);
-      return { value: minutes, unit: "MIN" };
-    }
-    return { value: seconds, unit: "SEK" };
-  };
-
-  const timeDisplay = formatTime(displayTimeLeft);
 
   return (
     <div className="z-50 flex flex-col items-center">
@@ -162,7 +108,6 @@ export function ModeSelector({ user }: ModeSelectorProps) {
                   : "text-muted-foreground"
               )}
               onClick={() => setActiveTab("multiplayer")}
-              type="button"
             >
               Multiplayer
             </button>
@@ -172,9 +117,8 @@ export function ModeSelector({ user }: ModeSelectorProps) {
                 activeTab === "private"
                   ? "-mb-2.5 border-primary border-b-2 text-primary"
                   : ""
-              )}
-              onClick={() => setActiveTab("private")} // Disabled for now visually or functionally
-              type="button"
+              )} // Disabled for now visually or functionally
+              onClick={() => setActiveTab("private")}
             >
               Private (Locked)
             </button>
@@ -186,16 +130,14 @@ export function ModeSelector({ user }: ModeSelectorProps) {
               Game Mode
             </h3>
             <div className="flex gap-4">
-              <button
-                aria-pressed={selectedMode === "fronts"}
+              <div
                 className={cn(
-                  "pixel-corners w-full flex-1 cursor-pointer border-2 bg-muted/20 p-4 text-left transition-all hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+                  "pixel-corners flex-1 cursor-pointer border-2 bg-muted/20 p-4 transition-all hover:bg-muted/40",
                   selectedMode === "fronts"
                     ? "border-primary bg-primary/10"
                     : "border-transparent"
                 )}
                 onClick={() => setSelectedMode("fronts")}
-                type="button"
               >
                 <div className="flex items-center gap-3">
                   <Globe className="h-8 w-8 text-primary" />
@@ -206,7 +148,7 @@ export function ModeSelector({ user }: ModeSelectorProps) {
                     </div>
                   </div>
                 </div>
-              </button>
+              </div>
               {/* Future modes can go here */}
             </div>
           </div>
@@ -222,89 +164,44 @@ export function ModeSelector({ user }: ModeSelectorProps) {
                 label="Free For All"
                 onClick={() => setSelectedSubMode("ffa")}
                 selected={selectedSubMode === "ffa"}
+                value="ffa"
               />
               <SubModeCard
                 icon={<Users className="h-6 w-6" />}
                 label="Duos"
                 onClick={() => setSelectedSubMode("duos")}
                 selected={selectedSubMode === "duos"}
+                value="duos"
               />
               <SubModeCard
                 icon={<Shield className="h-6 w-6" />}
                 label="Squads"
                 onClick={() => setSelectedSubMode("squads")}
                 selected={selectedSubMode === "squads"}
+                value="squads"
               />
               <SubModeCard
                 icon={<Swords className="h-6 w-6" />}
                 label="2 Teams"
                 onClick={() => setSelectedSubMode("teams")}
                 selected={selectedSubMode === "teams"}
+                value="teams"
               />
             </div>
           </div>
         </div>
       )}
 
-      {/* Lobby Status Overlay with Timer */}
+      {/* Lobby Status Overlay (Simple version) */}
       {status === "joined" && (
-        <div className="pixel-corners zoom-in-95 absolute top-24 min-w-[300px] animate-in border-2 border-primary bg-background/90 p-6 text-center">
-          <h3 className="mb-4 font-sans text-primary text-xl">LOBBY JOINED</h3>
-
-          {/* Timer Display */}
-          <div className="mb-4 flex items-center justify-center gap-2">
-            <Clock className="h-6 w-6 animate-pulse text-primary" />
-            <span className="font-bold font-mono text-4xl text-white">
-              {timeDisplay.value}
-            </span>
-            <span className="font-mono text-muted-foreground text-sm">
-              {timeDisplay.unit}
-            </span>
-          </div>
-
-          {/* Player Count */}
-          <div className="mb-2">
-            <div className="mb-1 flex items-center justify-center gap-2">
-              <Users className="h-4 w-4 text-muted-foreground" />
-              <span className="font-mono text-lg text-white">
-                {lobbyStatus?.status === "waiting"
-                  ? lobbyStatus.playerCount
-                  : 1}
-                <span className="text-muted-foreground">/16</span>
-              </span>
-            </div>
-            {/* Progress bar */}
-            <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full bg-primary transition-all duration-300"
-                style={{
-                  width: `${((lobbyStatus?.status === "waiting" ? lobbyStatus.playerCount : 1) / 16) * 100}%`,
-                }}
-              />
-            </div>
-          </div>
-
-          <p className="mb-4 font-mono text-muted-foreground text-xs">
-            {displayTimeLeft > 0
-              ? "Spiel startet wenn voll oder Timer abläuft"
-              : "Spiel startet..."}
+        <div className="pixel-corners zoom-in-95 absolute top-24 animate-in border-2 border-primary bg-background/90 p-4 text-center">
+          <h3 className="mb-2 font-sans text-primary text-xl">LOBBY JOINED</h3>
+          <p className="font-mono text-muted-foreground text-xs">
+            Waiting for players...
           </p>
-
-          <div className="flex gap-2">
-            <Button
-              className="pixel-corners flex-1 border-green-600 bg-green-600 font-mono text-sm text-white uppercase hover:bg-green-700"
-              onClick={handleForceStart}
-            >
-              Lobby starten
-            </Button>
-            <Button
-              className="pixel-corners font-mono text-muted-foreground text-xs uppercase hover:text-destructive"
-              onClick={handleLeave}
-              variant="ghost"
-            >
-              Verlassen
-            </Button>
-          </div>
+          <p className="mt-2 font-mono text-muted-foreground text-xs">
+            Game ID: {gameId?.slice(0, 8)}...
+          </p>
         </div>
       )}
     </div>
@@ -314,28 +211,28 @@ export function ModeSelector({ user }: ModeSelectorProps) {
 function SubModeCard({
   icon,
   label,
+  value,
   selected,
   onClick,
 }: {
   icon: React.ReactNode;
   label: string;
+  value: string;
   selected: boolean;
   onClick: () => void;
 }) {
   return (
-    <button
-      aria-pressed={selected}
+    <div
       className={cn(
-        "pixel-corners flex w-full cursor-pointer flex-col items-center justify-center gap-2 border-2 p-4 transition-all hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary active:scale-95",
+        "pixel-corners flex cursor-pointer flex-col items-center justify-center gap-2 border-2 p-4 transition-all hover:scale-105 active:scale-95",
         selected
           ? "border-primary bg-primary/20 text-primary"
           : "border-muted bg-background text-muted-foreground hover:border-primary/50"
       )}
       onClick={onClick}
-      type="button"
     >
       {icon}
       <span className="text-center font-mono text-xs uppercase">{label}</span>
-    </button>
+    </div>
   );
 }

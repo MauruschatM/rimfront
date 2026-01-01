@@ -850,7 +850,8 @@ async function processActiveEntities(
   isRoundTick: boolean,
   poweredBuildingIds: Set<string>,
   playerBetrayalTimes: Record<string, number>,
-  alliances: Set<string> // Set of "id1:id2" allied pairs
+  alliances: Set<string>, // Set of "id1:id2" allied pairs
+  playerTeams: Record<string, string> // Map of playerId -> teamId
 ): Promise<boolean> {
   const deletedEntityIds = new Set<string>();
   let buildingsDamaged = false;
@@ -926,11 +927,16 @@ async function processActiveEntities(
             !deletedEntityIds.has(e.id) &&
             // Turrets don't attack buildings, only units
             (entity.type !== "turret_gun" || e.type !== "building") &&
-            // Check Alliances: Ignore if allied
+            // Check Alliances: Ignore if allied or SAME TEAM
             !alliances.has(
               entity.ownerId < e.ownerId
                 ? `${entity.ownerId}:${e.ownerId}`
                 : `${e.ownerId}:${entity.ownerId}`
+            ) &&
+            !(
+              playerTeams[entity.ownerId] &&
+              playerTeams[e.ownerId] &&
+              playerTeams[entity.ownerId] === playerTeams[e.ownerId]
             )
         );
 
@@ -1639,7 +1645,22 @@ export const tick = internalMutation({
         (p) => !p.status || p.status === "active"
       );
 
-      if (activePlayers.length <= 1 && allPlayers.length > 1) {
+      // Group by Team
+      const activeTeams = new Set<string>();
+      let independentPlayerCount = 0;
+
+      for (const p of activePlayers) {
+        if (p.teamId) {
+          activeTeams.add(p.teamId);
+        } else {
+          independentPlayerCount++;
+        }
+      }
+
+      // Total competing factions = teams + independent players
+      const totalFactions = activeTeams.size + independentPlayerCount;
+
+      if (totalFactions <= 1 && allPlayers.length > 1) {
         // Ensure >1 total players so solo testing doesn't instant-end
         await ctx.db.patch(game._id, { status: "ended" });
         return;
@@ -1872,9 +1893,13 @@ export const tick = internalMutation({
     }
 
     const playerBetrayalTimes: Record<string, number> = {};
+    const playerTeams: Record<string, string> = {};
     for (const p of players) {
       if (p.lastBetrayalTime) {
         playerBetrayalTimes[p._id] = p.lastBetrayalTime;
+      }
+      if (p.teamId) {
+        playerTeams[p._id] = p.teamId;
       }
     }
 
@@ -1897,7 +1922,8 @@ export const tick = internalMutation({
       isRoundTick,
       poweredBuildingIds,
       playerBetrayalTimes,
-      alliances
+      alliances,
+      playerTeams
     );
     await processInsideEntities(
       ctx,

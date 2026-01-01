@@ -29,7 +29,7 @@ export const findOrCreateLobby = mutation({
       )
       .take(5);
 
-    let gameIdToJoin = null;
+    let gameIdToJoin: Id<"games"> | null = null;
     let isNewGame = false;
 
     for (const game of waitingGames) {
@@ -56,65 +56,104 @@ export const findOrCreateLobby = mutation({
     }
 
     // 3. Add player to the game
-    let teamId;
+    let teamId: string | undefined;
 
-    // Simple logic: if 'teams', assign to smaller team
-    // This assumes 2 teams for now as per "2 Teams" mode
-    if (args.subMode === "teams") {
+    if (args.subMode !== "ffa" && gameIdToJoin) {
       const teams = await ctx.db
         .query("teams")
-        .filter((q) => q.eq(q.field("gameId"), gameIdToJoin!))
+        .filter((q) => q.eq(q.field("gameId"), gameIdToJoin as Id<"games">))
         .collect();
-      let teamA, teamB;
-      // Logic to reuse or create teams
-      if (teams.length === 0) {
-        teamA = await ctx.db.insert("teams", {
-          gameId: gameIdToJoin,
-          name: "Alpha",
-          type: "alpha",
-        });
-        teamB = await ctx.db.insert("teams", {
-          gameId: gameIdToJoin,
-          name: "Bravo",
-          type: "bravo",
-        });
-      } else {
-        teamA = teams[0]._id;
-        // Ensure we have a second team if one exists but not the other (unlikely but safe)
-        teamB = teams[1]
-          ? teams[1]._id
-          : await ctx.db.insert("teams", {
-              gameId: gameIdToJoin,
-              name: "Bravo",
-              type: "bravo",
-            });
+
+      const players = await ctx.db
+        .query("players")
+        .filter((q) => q.eq(q.field("gameId"), gameIdToJoin as Id<"games">))
+        .collect();
+
+      // Calculate current team sizes
+      const teamCounts: Record<string, number> = {};
+      for (const t of teams) {
+        teamCounts[t._id] = 0;
+      }
+      for (const p of players) {
+        if (p.teamId) {
+          teamCounts[p.teamId] = (teamCounts[p.teamId] || 0) + 1;
+        }
       }
 
-      // Count players to balance
-      // Note: This is slightly expensive, ideally we'd store counts on the team object
-      const playersA = await ctx.db
-        .query("players")
-        .filter((q) =>
-          q.and(
-            q.eq(q.field("gameId"), gameIdToJoin!),
-            q.eq(q.field("teamId"), teamA)
-          )
-        )
-        .collect();
-      const playersB = await ctx.db
-        .query("players")
-        .filter((q) =>
-          q.and(
-            q.eq(q.field("gameId"), gameIdToJoin!),
-            q.eq(q.field("teamId"), teamB)
-          )
-        )
-        .collect();
+      let MAX_PER_TEAM = 100; // Default for "teams"
+      if (args.subMode === "duos") {
+        MAX_PER_TEAM = 2;
+      } else if (args.subMode === "squads") {
+        MAX_PER_TEAM = 4;
+      }
 
-      if (playersA.length <= playersB.length) {
-        teamId = teamA;
+      if (args.subMode === "teams") {
+        // "2 Teams" Logic (Alpha/Bravo)
+        let teamA = teams.find((t) => t.type === "alpha");
+        let teamB = teams.find((t) => t.type === "bravo");
+
+        if (!teamA) {
+          const id = await ctx.db.insert("teams", {
+            gameId: gameIdToJoin,
+            name: "Alpha",
+            type: "alpha",
+          });
+          teamA = {
+            _id: id,
+            gameId: gameIdToJoin,
+            name: "Alpha",
+            type: "alpha",
+          };
+          teamCounts[id] = 0;
+        }
+        if (!teamB) {
+          const id = await ctx.db.insert("teams", {
+            gameId: gameIdToJoin,
+            name: "Bravo",
+            type: "bravo",
+          });
+          teamB = {
+            _id: id,
+            gameId: gameIdToJoin,
+            name: "Bravo",
+            type: "bravo",
+          };
+          teamCounts[id] = 0;
+        }
+
+        // Assign to smaller team
+        if ((teamCounts[teamA._id] || 0) <= (teamCounts[teamB._id] || 0)) {
+          teamId = teamA._id;
+        } else {
+          teamId = teamB._id;
+        }
       } else {
-        teamId = teamB;
+        // "Duos" or "Squads" Logic
+        // Find first team with space
+        let foundTeamId: string | null = null;
+        for (const t of teams) {
+          if ((teamCounts[t._id] || 0) < MAX_PER_TEAM) {
+            foundTeamId = t._id;
+            break;
+          }
+        }
+
+        if (foundTeamId) {
+          teamId = foundTeamId;
+        } else {
+          // Create new team
+          const teamNumber = teams.length + 1;
+          const name =
+            args.subMode === "duos"
+              ? `Duo ${teamNumber}`
+              : `Squad ${teamNumber}`;
+
+          teamId = await ctx.db.insert("teams", {
+            gameId: gameIdToJoin,
+            name,
+            type: args.subMode, // "duos" or "squads"
+          });
+        }
       }
     }
 
@@ -169,44 +208,105 @@ export const checkGameStart = mutation({
       // Fill with bots
       const slotsNeeded = 16 - players.length;
       if (slotsNeeded > 0) {
-        // If teams are involved, we need to balance bots too
-        // Simplified bot filling for now
-        if (game.subMode === "teams") {
-          // Re-fetch teams
+        if (game.subMode !== "ffa") {
           const teams = await ctx.db
             .query("teams")
             .filter((q) => q.eq(q.field("gameId"), game._id))
             .collect();
-          if (teams.length >= 2) {
-            const teamA = teams[0]._id;
-            const teamB = teams[1]._id;
-            // Count again
-            let countA = players.filter((p) => p.teamId === teamA).length;
-            let countB = players.filter((p) => p.teamId === teamB).length;
 
-            for (let i = 0; i < slotsNeeded; i++) {
-              // Assign to smaller team
-              let botTeam;
-              if (countA <= countB) {
-                botTeam = teamA;
-                countA++;
-              } else {
-                botTeam = teamB;
-                countB++;
-              }
+          const teamCounts: Record<string, number> = {};
+          for (const t of teams) {
+            teamCounts[t._id] = 0;
+          }
+          for (const p of players) {
+            if (p.teamId) {
+              teamCounts[p.teamId] = (teamCounts[p.teamId] || 0) + 1;
+            }
+          }
+
+          let MAX_PER_TEAM = 100;
+          if (game.subMode === "duos") {
+            MAX_PER_TEAM = 2;
+          } else if (game.subMode === "squads") {
+            MAX_PER_TEAM = 4;
+          }
+
+          let botsCreated = 0;
+
+          // 1. Fill existing teams first
+          for (const team of teams) {
+            while (
+              (teamCounts[team._id] || 0) < MAX_PER_TEAM &&
+              botsCreated < slotsNeeded
+            ) {
               await ctx.db.insert("players", {
                 gameId: game._id,
-                userId: undefined,
                 isBot: true,
                 name: `Bot-${Math.floor(Math.random() * 1000)}`,
-                teamId: botTeam,
+                teamId: team._id,
                 credits: 0,
                 inflation: 1.0,
               });
+              teamCounts[team._id]++;
+              botsCreated++;
+            }
+          }
+
+          // 2. Create new teams if still needed (for Duos/Squads)
+          while (botsCreated < slotsNeeded) {
+            // Find or create a team that needs members
+            let targetTeamId: string | null = null;
+
+            if (game.subMode === "teams") {
+              // Should not happen if Alpha/Bravo exist and we filled them, unless they are full (100?)
+              // Re-check smallest
+              const teamA = teams.find((t) => t.type === "alpha");
+              const teamB = teams.find((t) => t.type === "bravo");
+              if (teamA && teamB) {
+                targetTeamId =
+                  (teamCounts[teamA._id] || 0) <= (teamCounts[teamB._id] || 0)
+                    ? teamA._id
+                    : teamB._id;
+              }
+            } else {
+              // Create new team
+              const teamNumber = Object.keys(teamCounts).length + 1;
+              const name =
+                game.subMode === "duos"
+                  ? `Duo ${teamNumber}`
+                  : `Squad ${teamNumber}`;
+              targetTeamId = await ctx.db.insert("teams", {
+                gameId: game._id,
+                name,
+                type: game.subMode,
+              });
+              teamCounts[targetTeamId] = 0;
+            }
+
+            if (targetTeamId) {
+              // Fill this new team up to MAX or until slots exhausted
+              while (
+                (teamCounts[targetTeamId] || 0) < MAX_PER_TEAM &&
+                botsCreated < slotsNeeded
+              ) {
+                await ctx.db.insert("players", {
+                  gameId: game._id,
+                  isBot: true,
+                  name: `Bot-${Math.floor(Math.random() * 1000)}`,
+                  teamId: targetTeamId,
+                  credits: 0,
+                  inflation: 1.0,
+                });
+                teamCounts[targetTeamId]++;
+                botsCreated++;
+              }
+            } else {
+              // Fallback (shouldn't happen)
+              break;
             }
           }
         } else {
-          // FFA / No teams
+          // FFA
           for (let i = 0; i < slotsNeeded; i++) {
             await ctx.db.insert("players", {
               gameId: game._id,

@@ -120,7 +120,12 @@ export function UserProfile({ user }: UserProfileProps) {
 
       <div className="flex w-full gap-4 pt-4">
         {/* Play Button - Placeholder for now */}
-        <Button className="pixel-corners h-12 flex-1 rounded-none bg-green-600 font-sans text-lg text-white hover:bg-green-700">
+        <Button
+          aria-disabled="true"
+          className="pixel-corners h-12 flex-1 rounded-none bg-green-600 font-sans text-lg text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
+          disabled
+          title="Coming Soon"
+        >
           ENTER WORLD
         </Button>
       </div>
@@ -192,6 +197,7 @@ export function UserProfile({ user }: UserProfileProps) {
                   <Label className="font-mono text-xs">THEME MODE</Label>
                   <div className="flex gap-2">
                     <Button
+                      aria-pressed={theme === "light"}
                       className="h-8 font-mono text-xs"
                       onClick={() => setTheme("light")}
                       size="sm"
@@ -200,6 +206,7 @@ export function UserProfile({ user }: UserProfileProps) {
                       LIGHT
                     </Button>
                     <Button
+                      aria-pressed={theme === "dark"}
                       className="h-8 font-mono text-xs"
                       onClick={() => setTheme("dark")}
                       size="sm"

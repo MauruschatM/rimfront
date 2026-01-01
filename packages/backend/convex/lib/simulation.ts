@@ -1,13 +1,17 @@
 import type { Id } from "../_generated/dataModel";
 import { processActiveEntities } from "./combat";
 import { TICKS_PER_ROUND } from "./constants";
-import { calculatePoweredBuildings, handleCapture, transferOwnership } from "./gameState";
+import {
+  calculatePoweredBuildings,
+  handleCapture,
+  transferOwnership,
+} from "./gameState";
+import { createCollisionMap } from "./pathfinding";
 import { eliminatePlayer } from "./player";
-import { handleSpawning } from "./spawning";
 import { SpatialHash } from "./spatial";
+import { handleSpawning } from "./spawning";
 import type { Building, Entity, Family, Player, Troop } from "./types";
 import { categorizeBuildings, processInsideEntities } from "./unitBehavior";
-import { createCollisionMap } from "./pathfinding";
 
 export async function runGameTick(ctx: any, gameId: Id<"games">) {
   const game = await ctx.db.get(gameId);
@@ -100,11 +104,7 @@ export async function runGameTick(ctx: any, gameId: Id<"games">) {
   const destroyedBuildingIds = new Set<string>();
 
   for (const b of mapDoc.buildings) {
-    if (
-      b.health !== undefined &&
-      b.health <= 0 &&
-      b.type !== "base_central"
-    ) {
+    if (b.health !== undefined && b.health <= 0 && b.type !== "base_central") {
       destroyedBuildingIds.add(b.id);
     } else {
       survivors.push(b);
@@ -131,10 +131,8 @@ export async function runGameTick(ctx: any, gameId: Id<"games">) {
   // If not destroyed but damaged? We need to save.
   const mapSaved = destroyedBuildingIds.size > 0;
 
-  if (!mapSaved) {
-    if (captureEvents.length > 0) {
-      await ctx.db.patch(mapDoc._id, { buildings: mapDoc.buildings });
-    }
+  if (!mapSaved && captureEvents.length > 0) {
+    await ctx.db.patch(mapDoc._id, { buildings: mapDoc.buildings });
   }
 
   // Process Completed Captures
@@ -231,7 +229,7 @@ export async function runGameTick(ctx: any, gameId: Id<"games">) {
     if (!existingGun) {
       // Spawn it
       const newEntity = {
-        gameId: gameId,
+        gameId,
         ownerId: t.ownerId as Id<"players">,
         buildingId: t.id,
         type: "turret_gun",
@@ -345,11 +343,7 @@ export async function runGameTick(ctx: any, gameId: Id<"games">) {
   let buildingCountChanged = false;
 
   for (const b of mapDoc.buildings) {
-    if (
-      b.health !== undefined &&
-      b.health <= 0 &&
-      b.type !== "base_central"
-    ) {
+    if (b.health !== undefined && b.health <= 0 && b.type !== "base_central") {
       finalDestroyedIds.add(b.id);
       buildingCountChanged = true;
     } else {

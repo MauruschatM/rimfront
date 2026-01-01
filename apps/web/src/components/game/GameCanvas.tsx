@@ -60,6 +60,7 @@ interface Player {
   credits: number;
   userId?: string;
   name?: string;
+  teamId?: string;
 }
 
 interface GameMap {
@@ -216,16 +217,27 @@ export function GameCanvas({
   } = useMemo(() => {
     // 1. Identify Allies
     const alliedPlayerIds = new Set<string>();
-    if (myPlayerId && alliances) {
+    if (myPlayerId) {
       alliedPlayerIds.add(myPlayerId);
-      for (const a of alliances) {
-        if (a.status === "allied") {
-          if (a.player1Id === myPlayerId) alliedPlayerIds.add(a.player2Id);
-          if (a.player2Id === myPlayerId) alliedPlayerIds.add(a.player1Id);
+
+      // Check for Teammates (Fixed Alliance)
+      if (myPlayer?.teamId) {
+        for (const p of players) {
+          if (p.teamId === myPlayer.teamId) {
+            alliedPlayerIds.add(p._id);
+          }
         }
       }
-    } else if (myPlayerId) {
-      alliedPlayerIds.add(myPlayerId);
+
+      // Check for Dynamic Alliances (Diplomacy)
+      if (alliances) {
+        for (const a of alliances) {
+          if (a.status === "allied") {
+            if (a.player1Id === myPlayerId) alliedPlayerIds.add(a.player2Id);
+            if (a.player2Id === myPlayerId) alliedPlayerIds.add(a.player1Id);
+          }
+        }
+      }
     }
 
     // 2. Identify Visible Chunks (Simple Grid 16x16)

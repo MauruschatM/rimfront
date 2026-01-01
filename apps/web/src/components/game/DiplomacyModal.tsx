@@ -1,5 +1,7 @@
 import { api } from "@packages/backend/convex/_generated/api";
 import { useMutation, useQuery } from "convex/react";
+import { Shield } from "lucide-react";
+import * as React from "react";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -44,7 +46,9 @@ export function DiplomacyModal({
   myPlayerId,
 }: DiplomacyModalProps) {
   const alliances = useQuery(api.diplomacy.getAlliances, { gameId });
-  const players = useQuery(api.game.getGameState, { gameId })?.players;
+  const gameState = useQuery(api.game.getGameState, { gameId });
+  const players = gameState?.players;
+  const subMode = gameState?.game?.subMode || "ffa";
 
   const requestAlliance = useMutation(api.diplomacy.requestAlliance);
   const acceptAlliance = useMutation(api.diplomacy.acceptAlliance);
@@ -71,6 +75,12 @@ export function DiplomacyModal({
       (a.player1Id === myPlayerId && a.player2Id === targetPlayerId) ||
       (a.player1Id === targetPlayerId && a.player2Id === myPlayerId)
   );
+
+  // Check if teammate (Fixed Alliance)
+  const isTeammate =
+    myPlayer.teamId &&
+    targetPlayer.teamId &&
+    myPlayer.teamId === targetPlayer.teamId;
 
   const status = relationship?.status || "none";
   const isSender = relationship?.player1Id === myPlayerId;
@@ -151,10 +161,24 @@ export function DiplomacyModal({
             </CardHeader>
             <CardContent>
               <div className="flex flex-col gap-2">
-                {status === "none" && (
+                {isTeammate ? (
+                  <div className="text-center">
+                    <Shield className="mx-auto mb-2 h-12 w-12 text-blue-500" />
+                    <p className="mb-4 font-bold text-blue-500">TEAMMATE</p>
+                    <p className="text-muted-foreground text-xs">
+                      You are on the same team. Friendly fire is disabled and
+                      you share vision.
+                    </p>
+                  </div>
+                ) : subMode !== "ffa" ? (
+                  <div className="text-center">
+                    <p className="mb-4 text-muted-foreground">
+                      Diplomacy disabled in Team modes
+                    </p>
+                  </div>
+                ) : status === "none" ? (
                   <Button onClick={handleRequest}>Request Alliance</Button>
-                )}
-                {status === "pending" && isSender && (
+                ) : status === "pending" && isSender ? (
                   <Button onClick={handleReject} variant="outline">
                     Cancel Request
                   </Button>

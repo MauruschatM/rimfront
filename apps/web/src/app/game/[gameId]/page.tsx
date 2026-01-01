@@ -71,8 +71,13 @@ export default function GamePage() {
   };
 
   const handleEndGame = async () => {
-    await deleteGame({ gameId });
-    router.push("/");
+    try {
+      await deleteGame({ gameId });
+      router.push("/");
+    } catch (e) {
+      console.error("Failed to end game:", e);
+      alert((e as Error).message);
+    }
   };
 
   const handlePlaceBuilding = async (type: string, x: number, y: number) => {
@@ -472,7 +477,9 @@ export default function GamePage() {
           onClick={handleEndGame}
           variant="destructive"
         >
-          END GAME
+          {session?.user?.email === "moritz.mauruschat@gmail.com"
+            ? "DELETE GAME (ADMIN)"
+            : "END GAME"}
         </Button>
       </div>
 

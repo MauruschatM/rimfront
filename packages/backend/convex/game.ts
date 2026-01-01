@@ -471,15 +471,16 @@ export const deleteGame = mutation({
       .filter((q) => q.eq(q.field("gameId"), args.gameId))
       .collect();
 
-    // 4. Verify user is a player in this game
+    // 4. Verify user is a player in this game OR is an admin
+    const isAdmin = identity.email === "moritz.mauruschat@gmail.com";
     const isPlayer = players.some((p) => p.userId === identity.subject);
-    if (!isPlayer) {
-      throw new Error("You are not a player in this game");
+
+    if (!(isPlayer || isAdmin)) {
+      throw new Error("You are not authorized to delete this game");
     }
 
-    // 5. Griefing Protection: Only allow deletion if user is the LAST player
-    // Note: If players.length is 1, it must be the current user (since isPlayer is true)
-    if (players.length > 1) {
+    // 5. Griefing Protection: Only allow deletion if user is the LAST player OR is an admin
+    if (players.length > 1 && !isAdmin) {
       throw new Error("Cannot delete game while other players are present");
     }
 

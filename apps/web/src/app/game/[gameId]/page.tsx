@@ -1,21 +1,14 @@
 "use client";
 
 import { api } from "@packages/backend/convex/_generated/api";
-import type { Id } from "@packages/backend/convex/_generated/dataModel";
+import type { Doc, Id } from "@packages/backend/convex/_generated/dataModel";
 import { useMutation, useQuery } from "convex/react";
-import {
-  Clock,
-  Coins,
-  Crosshair,
-  Hammer,
-  Loader2,
-  Shield,
-  Trophy,
-  Users,
-} from "lucide-react";
+import { Crosshair, Hammer, Loader2, Shield } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
-import * as React from "react";
+import React from "react";
+import { toast } from "sonner";
 import { GameCanvas } from "@/components/game/GameCanvas";
+import { GameHUD, LobbyScreen } from "@/components/game/GameComponents";
 import { VictoryDefeatOverlay } from "@/components/game/VictoryDefeatOverlay";
 import { Button } from "@/components/ui/button";
 import { Vignette } from "@/components/ui/vignette";
@@ -29,6 +22,38 @@ const BUILDINGS_INFO = [
   { id: "wall", name: "Wall", width: 1, height: 1, baseCost: 500 },
   { id: "turret", name: "Turret", width: 2, height: 2, baseCost: 5000 },
 ];
+
+interface Building {
+  id: string;
+  ownerId: string;
+  type: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  health: number;
+  constructionEnd?: number;
+  captureStart?: number;
+  capturingOwnerId?: string;
+}
+
+interface Entity {
+  _id: string;
+  troopId?: string;
+  type: string;
+}
+
+interface Player {
+  _id: string;
+  userId?: string;
+  isBot: boolean;
+  name: string;
+  credits?: number;
+  inflation?: number;
+  status?: string;
+  eliminatedBy?: string;
+  teamId?: string;
+}
 
 export default function GamePage() {
   const params = useParams();
@@ -63,22 +88,15 @@ export default function GamePage() {
     return () => clearInterval(interval);
   }, []);
 
-  // Format time: show minutes if >= 100 seconds, otherwise show seconds
-  const formatGameTime = (seconds: number) => {
-    if (seconds >= 100) {
-      const minutes = Math.ceil(seconds / 60);
-      return { value: minutes, unit: "MIN" };
-    }
-    return { value: seconds, unit: "SEK" };
-  };
-
   const handleEndGame = async () => {
     try {
       await deleteGame({ gameId });
       router.push("/");
     } catch (e) {
       console.error("Failed to end game:", e);
-      alert((e as Error).message);
+      if (e instanceof Error) {
+        toast.error(e.message);
+      }
     }
   };
 
@@ -93,7 +111,7 @@ export default function GamePage() {
     } catch (e) {
       const error = e as Error;
       console.error("Failed to place building:", error);
-      alert(error.message);
+      toast.error(error.message);
     }
   };
 
@@ -128,24 +146,6 @@ export default function GamePage() {
     }
   };
 
-  // Handle map clicks based on mode
-  const handleMapClick = (x: number, y: number) => {
-    if (mode === "build" && selectedBuilding) {
-      handlePlaceBuilding(selectedBuilding, x, y);
-    } else if (mode === "defense" && selectedTroopId) {
-      // Check if clicking on enemy building
-      const clickedBuilding = gameState?.buildings.find(
-        (b: any) =>
-          x >= b.x && x < b.x + b.width && y >= b.y && y < b.y + b.height
-      );
-      if (clickedBuilding && clickedBuilding.ownerId !== myPlayer?._id) {
-        handleAttackBuilding(clickedBuilding.id);
-      } else {
-        handleMoveTroop(x, y);
-      }
-    }
-  };
-
   if (gameState === undefined || staticMap === undefined) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-black text-white">
@@ -170,35 +170,60 @@ export default function GamePage() {
     players[0];
   const credits = myPlayer?.credits || 0;
 
+  // Handle map clicks based on mode
+  const handleMapClick = (x: number, y: number) => {
+    if (mode === "build" && selectedBuilding) {
+      handlePlaceBuilding(selectedBuilding, x, y);
+    } else if (mode === "defense" && selectedTroopId) {
+      // Check if clicking on enemy building
+      const clickedBuilding = (buildings as Building[]).find(
+        (b) =>
+          x >= b.x && x < b.x + b.width && y >= b.y && y < b.y + b.height
+      );
+      if (clickedBuilding && clickedBuilding.ownerId !== myPlayer?._id) {
+        handleAttackBuilding(clickedBuilding.id);
+      } else {
+        handleMoveTroop(x, y);
+      }
+    }
+  };
+
   // Score Calculation
-  const calculateScore = (player: any) => {
-    if (!player) return 0;
+  const calculateScore = (player: Player) => {
+    if (!player) {
+      return 0;
+    }
     const playerCredits = player.credits || 0;
     let buildingScore = 0;
-    for (const b of buildings) {
+    for (const b of buildings as Building[]) {
       if (b.ownerId === player._id) {
-        if (b.type === "house") buildingScore += 2000;
-        else if (b.type === "workshop") buildingScore += 4000;
-        else if (b.type === "barracks") buildingScore += 4000;
-        else if (b.type === "base_central") buildingScore += 10_000;
+        if (b.type === "house") {
+          buildingScore += 2000;
+        } else if (b.type === "workshop") {
+          buildingScore += 4000;
+        } else if (b.type === "barracks") {
+          buildingScore += 4000;
+        } else if (b.type === "base_central") {
+          buildingScore += 10_000;
+        }
       }
     }
     return playerCredits + buildingScore;
   };
 
-  const myScore = calculateScore(myPlayer);
+  const myScore = calculateScore(myPlayer as Player);
 
   // Inflation from backend (stored per player, decays -0.1/round, doubles on build)
   const inflationMultiplier = myPlayer?.inflation || 1.0;
 
   // Keep playerBuildings for isFirstOfType check
-  const playerBuildings = buildings.filter(
+  const playerBuildings = (buildings as Building[]).filter(
     (b) => b.ownerId === myPlayer?._id && b.type !== "base_central"
   );
 
   // Helper to check if this is the first building of a type
   const isFirstOfType = (type: string) => {
-    return !playerBuildings.some((b: any) => b.type === type);
+    return !playerBuildings.some((b) => b.type === type);
   };
 
   // Collect my troops
@@ -206,56 +231,7 @@ export default function GamePage() {
 
   // Phase Check - Waiting for game to start
   if (game.phase === "lobby" || game.status === "waiting") {
-    // Calculate time remaining
-    const now = Date.now();
-    const timeElapsed = now - game.createdAt;
-    const timeLeftMs = Math.max(0, 60_000 - timeElapsed);
-    const timeLeftSec = Math.ceil(timeLeftMs / 1000);
-    const playerCount = players.length;
-
-    return (
-      <div className="flex h-screen w-full items-center justify-center bg-black text-white">
-        <div className="pixel-corners flex min-w-[350px] flex-col items-center border-2 border-primary bg-background/50 p-8">
-          <h2 className="mb-6 font-sans text-2xl text-primary">
-            WARTE AUF SPIELSTART
-          </h2>
-
-          {/* Timer */}
-          <div className="mb-6 flex items-center gap-3">
-            <Clock className="h-8 w-8 animate-pulse text-primary" />
-            <span className="font-bold font-mono text-5xl">
-              {formatGameTime(timeLeftSec).value}
-            </span>
-            <span className="font-mono text-muted-foreground">
-              {formatGameTime(timeLeftSec).unit}
-            </span>
-          </div>
-
-          {/* Player count */}
-          <div className="mb-4 w-full">
-            <div className="mb-2 flex items-center justify-center gap-2">
-              <Users className="h-5 w-5 text-muted-foreground" />
-              <span className="font-mono text-xl">
-                {playerCount}
-                <span className="text-muted-foreground">/16 Spieler</span>
-              </span>
-            </div>
-            <div className="h-3 w-full overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full bg-primary transition-all duration-300"
-                style={{ width: `${(playerCount / 16) * 100}%` }}
-              />
-            </div>
-          </div>
-
-          <p className="text-center font-mono text-muted-foreground text-xs">
-            Spiel startet automatisch wenn voll
-            <br />
-            oder nach Ablauf des Timers
-          </p>
-        </div>
-      </div>
-    );
+    return <LobbyScreen game={game} players={players} />;
   }
   if (!staticMap && game.phase !== "lobby") {
     return (
@@ -288,72 +264,21 @@ export default function GamePage() {
             setMode("defense");
           }
         }}
-        players={players}
+        players={players as Player[]}
         selectedBuilding={selectedBuilding}
         selectedTroopId={selectedTroopId}
         staticMap={staticMap}
         troops={troops}
       />
 
-      {/* HUD */}
-      <div className="pointer-events-none absolute top-0 left-0 flex w-full items-start justify-between p-4">
-        <div className="pixel-corners border border-white/20 bg-black/50 p-2 text-white">
-          <h1 className="font-sans text-primary text-xl uppercase">
-            {staticMap?.planetType || "UNKNOWN SYSTEM"}
-          </h1>
-          <div className="font-mono text-muted-foreground text-xs">
-            PHASE:{" "}
-            <span className="text-white">{game.phase?.toUpperCase()}</span>
-          </div>
-        </div>
-
-        <div className="flex gap-4">
-          {/* Score Display */}
-          <div className="pixel-corners flex min-w-[100px] flex-col items-center border border-white/20 bg-black/50 p-2 text-white">
-            <div className="flex items-center gap-2 text-green-400">
-              <Trophy className="h-4 w-4" />
-              <span className="font-bold font-mono text-xl">
-                {myScore.toLocaleString()}
-              </span>
-            </div>
-            <div className="font-mono text-[10px] text-muted-foreground uppercase">
-              Score
-            </div>
-          </div>
-
-          {/* Inflation Display */}
-          <div className="pixel-corners flex min-w-[100px] flex-col items-center border border-white/20 bg-black/50 p-2 text-white">
-            <div className="flex items-center gap-2 text-orange-400">
-              <span className="text-lg">📈</span>
-              <span className="font-bold font-mono text-xl">
-                {inflationMultiplier.toFixed(1)}x
-              </span>
-            </div>
-            <div className="font-mono text-[10px] text-muted-foreground uppercase">
-              Inflation
-            </div>
-          </div>
-
-          <div className="pixel-corners flex min-w-[100px] flex-col items-center border border-white/20 bg-black/50 p-2 text-white">
-            <div className="flex items-center gap-2 text-yellow-400">
-              <Coins className="h-4 w-4" />
-              <span className="font-bold font-mono text-xl">{credits}</span>
-            </div>
-            <div className="font-mono text-[10px] text-muted-foreground uppercase">
-              Credits
-            </div>
-          </div>
-
-          <div className="pixel-corners border border-white/20 bg-black/50 p-2 text-white">
-            <div className="text-center font-bold font-mono text-4xl">
-              {phaseTimeLeft > 0 ? formatGameTime(phaseTimeLeft).value : "00"}
-            </div>
-            <div className="text-center font-mono text-muted-foreground text-xs">
-              {phaseTimeLeft > 0 ? formatGameTime(phaseTimeLeft).unit : "SEK"}
-            </div>
-          </div>
-        </div>
-      </div>
+      <GameHUD
+        credits={credits}
+        inflation={inflationMultiplier}
+        phase={game.phase || "simulation"}
+        planetType={staticMap?.planetType || "Unknown"}
+        score={myScore}
+        timeLeft={phaseTimeLeft}
+      />
 
       {/* Defense Mode Sidebar */}
       {mode === "defense" && (
@@ -369,7 +294,7 @@ export default function GamePage() {
             </div>
           ) : (
             myTroops.map((t) => (
-              <div
+              <button
                 className={cn(
                   "flex cursor-pointer items-center gap-2 border p-2 hover:bg-white/10",
                   selectedTroopId === t._id
@@ -385,8 +310,7 @@ export default function GamePage() {
                     setSelectedTroopId(t._id);
                   }
                 }}
-                role="button"
-                tabIndex={0}
+                type="button"
               >
                 <div className="h-4 w-4 rounded-full bg-red-500" />
                 <div className="flex flex-col">
@@ -395,8 +319,8 @@ export default function GamePage() {
                   </span>
                   <span className="font-mono text-[10px] text-white/50">
                     {
-                      entities.filter(
-                        (e: any) => e.troopId === t._id && e.type === "soldier"
+                      (entities as Entity[]).filter(
+                        (e) => e.troopId === t._id && e.type === "soldier"
                       ).length
                     }{" "}
                     Soldiers
@@ -405,7 +329,7 @@ export default function GamePage() {
                     {t.state.toUpperCase()}
                   </span>
                 </div>
-              </div>
+              </button>
             ))
           )}
         </div>
@@ -419,7 +343,7 @@ export default function GamePage() {
             const cost = isFree ? 0 : b.baseCost * inflationMultiplier;
             const canAfford = credits >= cost;
             return (
-              <div
+              <button
                 className={cn(
                   "flex min-w-[100px] cursor-pointer flex-col items-center border-2 bg-black/80 p-2 transition-all",
                   selectedBuilding === b.id
@@ -429,6 +353,7 @@ export default function GamePage() {
                 )}
                 key={b.id}
                 onClick={() => setSelectedBuilding(b.id)}
+                type="button"
               >
                 <div className="mb-1 font-mono text-white text-xs">
                   {b.name}
@@ -446,7 +371,7 @@ export default function GamePage() {
                 >
                   {isFree ? "GRATIS" : `${cost} CR`}
                 </div>
-              </div>
+              </button>
             );
           })}
         </div>
@@ -465,7 +390,9 @@ export default function GamePage() {
                 )}
                 onClick={() => {
                   setMode(mode === "build" ? "none" : "build");
-                  if (mode !== "build") setSelectedBuilding("house");
+                  if (mode !== "build") {
+                    setSelectedBuilding("house");
+                  }
                 }}
                 variant={mode === "build" ? "default" : "secondary"}
               >
@@ -552,10 +479,12 @@ export default function GamePage() {
       {game.status === "ended" && myPlayer && (
         <VictoryDefeatOverlay
           calculateScore={calculateScore}
-          isWinner={myScore === Math.max(...players.map(calculateScore))}
+          isWinner={myScore === Math.max(
+            ...players.map((p) => calculateScore(p as Player))
+          )}
           myPlayerId={myPlayer._id}
           onComplete={handleEndGame}
-          players={players}
+          players={players as Player[]}
         />
       )}
     </div>

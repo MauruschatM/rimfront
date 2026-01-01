@@ -3,7 +3,17 @@
 import { api } from "@packages/backend/convex/_generated/api";
 import type { Id } from "@packages/backend/convex/_generated/dataModel";
 import { useMutation, useQuery } from "convex/react";
-import { Clock, Globe, Play, Shield, Swords, User, Users } from "lucide-react";
+import {
+  Clock,
+  Globe,
+  Loader2,
+  Lock,
+  Play,
+  Shield,
+  Swords,
+  User,
+  Users,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import * as React from "react";
 import { Button } from "@/components/ui/button";
@@ -134,7 +144,9 @@ export function ModeSelector({ user }: ModeSelectorProps) {
           size="lg"
         >
           {status === "searching" ? (
-            <span className="animate-pulse">SEARCHING...</span>
+            <span className="flex items-center gap-2">
+              <Loader2 className="h-5 w-5 animate-spin" /> SEARCHING...
+            </span>
           ) : status === "joined" ? (
             <span>JOINED LOBBY</span>
           ) : isOpen ? (
@@ -167,16 +179,19 @@ export function ModeSelector({ user }: ModeSelectorProps) {
               Multiplayer
             </button>
             <button
+              aria-disabled="true"
+              aria-label="Private mode is currently locked"
               className={cn(
-                "cursor-not-allowed px-4 py-2 font-mono text-muted-foreground/50 text-sm uppercase transition-colors",
+                "flex items-center gap-2 px-4 py-2 font-mono text-sm uppercase transition-colors",
                 activeTab === "private"
                   ? "-mb-2.5 border-primary border-b-2 text-primary"
-                  : ""
+                  : "cursor-not-allowed text-muted-foreground/50"
               )}
-              onClick={() => setActiveTab("private")} // Disabled for now visually or functionally
+              disabled
+              title="Private mode is coming soon"
               type="button"
             >
-              Private (Locked)
+              Private <Lock className="h-3 w-3" />
             </button>
           </div>
 

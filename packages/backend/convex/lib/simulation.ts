@@ -1,13 +1,17 @@
 import type { Id } from "../_generated/dataModel";
 import { processActiveEntities } from "./combat";
 import { TICKS_PER_ROUND } from "./constants";
-import { calculatePoweredBuildings, handleCapture, transferOwnership } from "./gameState";
+import {
+  calculatePoweredBuildings,
+  handleCapture,
+  transferOwnership,
+} from "./gameState";
+import { createCollisionMap } from "./pathfinding";
 import { eliminatePlayer } from "./player";
-import { handleSpawning } from "./spawning";
 import { SpatialHash } from "./spatial";
+import { handleSpawning } from "./spawning";
 import type { Building, Entity, Family, Player, Troop } from "./types";
 import { categorizeBuildings, processInsideEntities } from "./unitBehavior";
-import { createCollisionMap } from "./pathfinding";
 
 export async function runGameTick(ctx: any, gameId: Id<"games">) {
   const game = await ctx.db.get(gameId);
@@ -90,8 +94,17 @@ export async function runGameTick(ctx: any, gameId: Id<"games">) {
     .withIndex("by_gameId", (q: any) => q.eq("gameId", gameId))
     .collect()) as Entity[];
 
-  // 2. Capture Logic
-  const captureEvents = handleCapture(mapDoc.buildings, entities, now);
+  // ⚡ Bolt Optimization: Build SpatialHash ONCE and reuse for Capture logic
+  // This avoids iterating O(Buildings * Units) in handleCapture
+  const spatialHash = new SpatialHash(10); // 10x10 chunks
+  for (const e of entities) {
+    if (!e.isInside && e.type !== "turret_gun") {
+      spatialHash.insert(e.type, e._id, e.x, e.y, e.ownerId);
+    }
+  }
+
+  // 2. Capture Logic (Now O(Buildings * LocalUnits) instead of O(Buildings * TotalUnits))
+  const captureEvents = handleCapture(mapDoc.buildings, spatialHash, now);
 
   // 2.1 Destruction Logic (Cleanup destroyed buildings)
   // We filter out buildings with health <= 0
@@ -100,11 +113,7 @@ export async function runGameTick(ctx: any, gameId: Id<"games">) {
   const destroyedBuildingIds = new Set<string>();
 
   for (const b of mapDoc.buildings) {
-    if (
-      b.health !== undefined &&
-      b.health <= 0 &&
-      b.type !== "base_central"
-    ) {
+    if (b.health !== undefined && b.health <= 0 && b.type !== "base_central") {
       destroyedBuildingIds.add(b.id);
     } else {
       survivors.push(b);
@@ -131,10 +140,8 @@ export async function runGameTick(ctx: any, gameId: Id<"games">) {
   // If not destroyed but damaged? We need to save.
   const mapSaved = destroyedBuildingIds.size > 0;
 
-  if (!mapSaved) {
-    if (captureEvents.length > 0) {
-      await ctx.db.patch(mapDoc._id, { buildings: mapDoc.buildings });
-    }
+  if (!mapSaved && captureEvents.length > 0) {
+    await ctx.db.patch(mapDoc._id, { buildings: mapDoc.buildings });
   }
 
   // Process Completed Captures
@@ -205,14 +212,7 @@ export async function runGameTick(ctx: any, gameId: Id<"games">) {
   // 2.1 Power Grid Logic
   const poweredBuildingIds = calculatePoweredBuildings(mapDoc.buildings);
 
-  // Build Spatial Hash
-  const spatialHash = new SpatialHash(10); // 10x10 chunks
-  for (const e of entities) {
-    if (!e.isInside && e.type !== "turret_gun") {
-      spatialHash.insert(e.type, e._id, e.x, e.y, e.ownerId);
-    }
-  }
-  // Add buildings to hash
+  // Add buildings to hash (done AFTER capture logic so combat sees new owners)
   for (const b of mapDoc.buildings) {
     const cx = b.x + b.width / 2;
     const cy = b.y + b.height / 2;
@@ -231,7 +231,7 @@ export async function runGameTick(ctx: any, gameId: Id<"games">) {
     if (!existingGun) {
       // Spawn it
       const newEntity = {
-        gameId: gameId,
+        gameId,
         ownerId: t.ownerId as Id<"players">,
         buildingId: t.id,
         type: "turret_gun",
@@ -345,11 +345,7 @@ export async function runGameTick(ctx: any, gameId: Id<"games">) {
   let buildingCountChanged = false;
 
   for (const b of mapDoc.buildings) {
-    if (
-      b.health !== undefined &&
-      b.health <= 0 &&
-      b.type !== "base_central"
-    ) {
+    if (b.health !== undefined && b.health <= 0 && b.type !== "base_central") {
       finalDestroyedIds.add(b.id);
       buildingCountChanged = true;
     } else {

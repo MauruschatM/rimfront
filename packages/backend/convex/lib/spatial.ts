@@ -1,8 +1,13 @@
+export interface SpatialHashItem {
+  type: string;
+  id: string;
+  x: number;
+  y: number;
+  ownerId: string;
+}
+
 export class SpatialHash {
-  grid: Map<
-    string,
-    Array<{ type: string; id: string; x: number; y: number; ownerId: string }>
-  >;
+  grid: Map<string, Array<SpatialHashItem>>;
   cellSize: number;
 
   constructor(cellSize: number) {
@@ -22,24 +27,8 @@ export class SpatialHash {
     this.grid.get(key)?.push({ type, id, x, y, ownerId });
   }
 
-  query(
-    x: number,
-    y: number,
-    radius: number
-  ): Array<{
-    type: string;
-    id: string;
-    x: number;
-    y: number;
-    ownerId: string;
-  }> {
-    const results: Array<{
-      type: string;
-      id: string;
-      x: number;
-      y: number;
-      ownerId: string;
-    }> = [];
+  query(x: number, y: number, radius: number): Array<SpatialHashItem> {
+    const results: Array<SpatialHashItem> = [];
     const minX = Math.floor((x - radius) / this.cellSize);
     const maxX = Math.floor((x + radius) / this.cellSize);
     const minY = Math.floor((y - radius) / this.cellSize);

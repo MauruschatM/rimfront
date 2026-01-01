@@ -188,6 +188,7 @@ interface Player {
   credits: number;
   isBot?: boolean;
   status?: string;
+  lastBetrayalTime?: number;
 }
 
 /**
@@ -571,14 +572,21 @@ function handleIdleLogic(
   target?: { x: number; y: number },
   workshops?: Building[],
   allEntities?: Entity[],
-  isRoundTick?: boolean
+  isRoundTick?: boolean,
+  isConfused?: boolean
 ): boolean {
-  if (target && (member.x !== target.x || member.y !== target.y)) {
+  // If confused (betrayal penalty), ignore user orders and just wander randomly
+  const effectiveTarget = isConfused ? undefined : target;
+
+  if (
+    effectiveTarget &&
+    (member.x !== effectiveTarget.x || member.y !== effectiveTarget.y)
+  ) {
     // Check backoff
     if (!member.nextPathAttempt || now >= member.nextPathAttempt) {
       const path = findPath(
         { x: member.x, y: member.y },
-        target,
+        effectiveTarget,
         mapWidth,
         mapHeight,
         blocked
@@ -763,7 +771,8 @@ function updateMember(
   workshops?: Building[],
   houses?: Building[],
   allEntities?: Entity[],
-  isRoundTick?: boolean
+  isRoundTick?: boolean,
+  isConfused?: boolean
 ): boolean {
   if (handleWalking(member, now, workshops, houses)) {
     return true;
@@ -784,7 +793,8 @@ function updateMember(
       target,
       workshops,
       allEntities,
-      isRoundTick
+      isRoundTick,
+      isConfused
     )
   ) {
     return true;
@@ -838,7 +848,9 @@ async function processActiveEntities(
   spatialHash: SpatialHash,
   entities: Entity[],
   isRoundTick: boolean,
-  poweredBuildingIds: Set<string>
+  poweredBuildingIds: Set<string>,
+  playerBetrayalTimes: Record<string, number>,
+  alliances: Set<string> // Set of "id1:id2" allied pairs
 ): Promise<boolean> {
   const deletedEntityIds = new Set<string>();
   let buildingsDamaged = false;
@@ -854,6 +866,10 @@ async function processActiveEntities(
       : undefined;
     const targetPos = troop?.targetPos;
 
+    // Check Confused State
+    const betrayalTime = playerBetrayalTimes[entity.ownerId];
+    const isConfused = betrayalTime && now < betrayalTime + 60_000;
+
     // Movement Logic
     if (
       entity.type !== "turret_gun" && // Turret guns don't move
@@ -867,7 +883,8 @@ async function processActiveEntities(
         workshops,
         houses,
         entities,
-        isRoundTick
+        isRoundTick,
+        !!isConfused
       )
     ) {
       dirty = true;
@@ -879,11 +896,19 @@ async function processActiveEntities(
       let range = 10;
       let damage = 1;
       const cooldown = 1000;
-      const accuracy = 0.8;
+      let accuracy = 0.8;
+
+      // Penalties for confused state
+      if (isConfused) {
+        range = 5;
+        accuracy = 0.2;
+      }
 
       // Turret specific logic
       if (entity.type === "turret_gun") {
         range = 15;
+        if (isConfused) range = 7; // Half range for confused turret? Or just blind?
+
         damage = 100; // High damage
         // Check power
         if (entity.buildingId && !poweredBuildingIds.has(entity.buildingId)) {
@@ -900,7 +925,13 @@ async function processActiveEntities(
             e.ownerId !== entity.ownerId &&
             !deletedEntityIds.has(e.id) &&
             // Turrets don't attack buildings, only units
-            (entity.type !== "turret_gun" || e.type !== "building")
+            (entity.type !== "turret_gun" || e.type !== "building") &&
+            // Check Alliances: Ignore if allied
+            !alliances.has(
+              entity.ownerId < e.ownerId
+                ? `${entity.ownerId}:${e.ownerId}`
+                : `${e.ownerId}:${entity.ownerId}`
+            )
         );
 
         // Prioritize closest
@@ -1814,6 +1845,39 @@ export const tick = internalMutation({
       }
     }
 
+    // Fetch Alliances & Handle Expiration
+    const allianceDocs = await ctx.db
+      .query("diplomacy")
+      .withIndex("by_gameId", (q: any) => q.eq("gameId", args.gameId))
+      .collect();
+    const alliances = new Set<string>();
+    const expiredAllianceIds = new Set<string>();
+
+    for (const d of allianceDocs) {
+      if (d.status === "allied") {
+        if (d.expiresAt && now > d.expiresAt) {
+          expiredAllianceIds.add(d._id);
+          continue;
+        }
+        // Store as sorted pair to easily check "a:b" or "b:a"
+        const p1 = d.player1Id < d.player2Id ? d.player1Id : d.player2Id;
+        const p2 = d.player1Id < d.player2Id ? d.player2Id : d.player1Id;
+        alliances.add(`${p1}:${p2}`);
+      }
+    }
+
+    // Delete expired alliances (silent break)
+    for (const id of expiredAllianceIds) {
+      await ctx.db.delete(id as any);
+    }
+
+    const playerBetrayalTimes: Record<string, number> = {};
+    for (const p of players) {
+      if (p.lastBetrayalTime) {
+        playerBetrayalTimes[p._id] = p.lastBetrayalTime;
+      }
+    }
+
     const buildingsDamaged = await processActiveEntities(
       ctx,
       entities.filter((e) => !e.isInside),
@@ -1831,7 +1895,9 @@ export const tick = internalMutation({
       spatialHash,
       entities,
       isRoundTick,
-      poweredBuildingIds
+      poweredBuildingIds,
+      playerBetrayalTimes,
+      alliances
     );
     await processInsideEntities(
       ctx,

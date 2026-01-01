@@ -19,6 +19,8 @@ const BUILDINGS: Record<
   house: { width: 2, height: 2, cost: 2000, timePerTile: 2000 },
   workshop: { width: 4, height: 4, cost: 4000, timePerTile: 2000 },
   barracks: { width: 3, height: 3, cost: 4000, timePerTile: 2000 },
+  wall: { width: 1, height: 1, cost: 500, timePerTile: 2000 },
+  turret: { width: 2, height: 2, cost: 5000, timePerTile: 5000 },
 };
 
 // Tick & Round timing
@@ -158,6 +160,7 @@ interface Entity {
   pathProgress?: number; // 0.0-1.0 progress within current tile
   reservedFactoryId?: string; // Reserved workshop slot
   nextPathAttempt?: number;
+  buildingId?: string;
 }
 
 interface Troop {
@@ -795,6 +798,8 @@ function categorizeBuildings(buildings: Building[]) {
   const houses: Building[] = [];
   const workshops: Building[] = [];
   const barracks: Building[] = [];
+  const turrets: Building[] = [];
+  const walls: Building[] = [];
 
   for (const b of buildings) {
     if (b.type === "house") {
@@ -806,8 +811,14 @@ function categorizeBuildings(buildings: Building[]) {
     if (b.type === "barracks") {
       barracks.push(b);
     }
+    if (b.type === "turret") {
+      turrets.push(b);
+    }
+    if (b.type === "wall") {
+      walls.push(b);
+    }
   }
-  return { houses, workshops, barracks };
+  return { houses, workshops, barracks, turrets, walls };
 }
 
 async function processActiveEntities(
@@ -820,13 +831,17 @@ async function processActiveEntities(
   blocked: Set<string>,
   workshops: Building[],
   houses: Building[],
+  barracks: Building[],
+  turrets: Building[],
+  walls: Building[],
   playerCredits: Record<string, number>,
   spatialHash: SpatialHash,
   entities: Entity[],
   isRoundTick: boolean,
   poweredBuildingIds: Set<string>
-) {
+): Promise<boolean> {
   const deletedEntityIds = new Set<string>();
+  let buildingsDamaged = false;
 
   for (const entity of activeEntities) {
     if (deletedEntityIds.has(entity._id)) {
@@ -841,6 +856,7 @@ async function processActiveEntities(
 
     // Movement Logic
     if (
+      entity.type !== "turret_gun" && // Turret guns don't move
       updateMember(
         entity,
         now,
@@ -857,23 +873,43 @@ async function processActiveEntities(
       dirty = true;
     }
 
-    // Combat Logic (Soldiers Only)
-    if (entity.type === "soldier") {
-      const COOLDOWN = 1000; // 1 second firing rate
-      const RANGE = 10;
+    // Combat Logic (Soldiers & Turrets)
+    if (entity.type === "soldier" || entity.type === "turret_gun") {
+      let canFire = true;
+      let range = 10;
+      let damage = 1;
+      const cooldown = 1000;
+      const accuracy = 0.8;
 
-      if (!entity.lastAttackTime || now > entity.lastAttackTime + COOLDOWN) {
-        const enemies = spatialHash
-          .query(entity.x, entity.y, RANGE)
-          .filter(
-            (e) =>
-              e.ownerId !== entity.ownerId &&
-              e.type !== "building" &&
-              !deletedEntityIds.has(e.id)
-          ); // Targeting units only for now? Or buildings too? Prompt says "Units automatically engage enemies within range".
+      // Turret specific logic
+      if (entity.type === "turret_gun") {
+        range = 15;
+        damage = 100; // High damage
+        // Check power
+        if (entity.buildingId && !poweredBuildingIds.has(entity.buildingId)) {
+          canFire = false;
+        }
+      }
+
+      if (
+        canFire &&
+        (!entity.lastAttackTime || now > entity.lastAttackTime + cooldown)
+      ) {
+        const enemies = spatialHash.query(entity.x, entity.y, range).filter(
+          (e) =>
+            e.ownerId !== entity.ownerId &&
+            !deletedEntityIds.has(e.id) &&
+            // Turrets don't attack buildings, only units
+            (entity.type !== "turret_gun" || e.type !== "building")
+        );
 
         // Prioritize closest
-        let target: { id: string; x: number; y: number } | null = null;
+        let target: {
+          id: string;
+          x: number;
+          y: number;
+          type: string;
+        } | null = null;
         let minDist = Number.POSITIVE_INFINITY;
 
         for (const enemy of enemies) {
@@ -892,22 +928,34 @@ async function processActiveEntities(
           dirty = true;
 
           // Resolve Hit (Server-side)
-          if (Math.random() < 0.8) {
-            // High hit prob
-            // Find target entity to damage
-            const targetEntity = entities.find((e) => e._id === target?.id);
-            if (targetEntity && !deletedEntityIds.has(targetEntity._id)) {
-              targetEntity.health = (targetEntity.health || 1) - 1;
-              // If dead, we handle cleanup later or immediately?
-              // Ideally we mark it, but we are iterating activeEntities.
-              // Let's just patch it now.
-              if (targetEntity.health <= 0) {
-                await ctx.db.delete(targetEntity._id);
-                deletedEntityIds.add(targetEntity._id);
-              } else {
-                await ctx.db.patch(targetEntity._id, {
-                  health: targetEntity.health,
-                });
+          if (Math.random() < accuracy) {
+            // Hit!
+            if (target.type === "building") {
+              // Damage Building
+              const building =
+                workshops.find((b) => b.id === target?.id) ||
+                houses.find((b) => b.id === target?.id) ||
+                barracks.find((b) => b.id === target?.id) ||
+                turrets.find((b) => b.id === target?.id) ||
+                walls.find((b) => b.id === target?.id);
+
+              if (building) {
+                building.health = (building.health || 0) - damage;
+                buildingsDamaged = true;
+              }
+            } else {
+              // Damage Entity
+              const targetEntity = entities.find((e) => e._id === target?.id);
+              if (targetEntity && !deletedEntityIds.has(targetEntity._id)) {
+                targetEntity.health = (targetEntity.health || 1) - damage;
+                if (targetEntity.health <= 0) {
+                  await ctx.db.delete(targetEntity._id);
+                  deletedEntityIds.add(targetEntity._id);
+                } else {
+                  await ctx.db.patch(targetEntity._id, {
+                    health: targetEntity.health,
+                  });
+                }
               }
             }
           }
@@ -939,6 +987,7 @@ async function processActiveEntities(
       await ctx.db.patch(entity._id, entity);
     }
   }
+  return buildingsDamaged;
 }
 
 async function processInsideEntities(
@@ -1582,21 +1631,78 @@ export const tick = internalMutation({
     // 2. Capture Logic
     const captureEvents = handleCapture(mapDoc.buildings, entities, now);
 
-    if (captureEvents.length > 0) {
-      await ctx.db.patch(mapDoc._id, { buildings: mapDoc.buildings });
-    } else {
-      // Even if no capture finished, we need to save capture progress state (captureStart, etc.)
-      // Optimization: We could check if any building changed state.
-      // For now, let's just save if handleCapture might have mutated something?
-      // handleCapture mutates buildings in place.
-      // We should check if 'dirty' - but `handleCapture` doesn't return dirty flag for progress.
-      // Let's assume progress happens often during combat and save.
-      // Or better: We can iterate and see if any captureStart exists.
-      const isDirty = mapDoc.buildings.some(
-        (b: any) => b.captureStart !== undefined || b.capturingOwnerId
-      );
-      if (isDirty) {
+    // 2.1 Destruction Logic (Cleanup destroyed buildings)
+    // We filter out buildings with health <= 0
+    // And delete associated entities (e.g. turret guns)
+    const survivors: Building[] = [];
+    const destroyedBuildingIds = new Set<string>();
+
+    for (const b of mapDoc.buildings) {
+      if (
+        b.health !== undefined &&
+        b.health <= 0 &&
+        b.type !== "base_central"
+      ) {
+        // Prevent base destruction via damage? Bases have capture logic. Prompt didn't specify base destruction. Assuming base destruction OK? But base capture eliminates player.
+        // Prompt says "Both get destroyed" (Wall, Turret).
+        // Let's allow destruction for all EXCEPT Central Base (which uses capture logic for elimination).
+        // Actually, if a base reaches 0 health, it should probably be destroyed -> elimination?
+        // But capture is the main mechanic.
+        // Let's strictly allow Wall/Turret destruction for now as per prompt.
+        // Or generic? "It should kill soldiers instantly" (Turret).
+        // "Walls ... can be selected ... and then destroyed."
+        // I will allow destruction of ANY building except Base for now.
+        destroyedBuildingIds.add(b.id);
+      } else {
+        survivors.push(b);
+      }
+    }
+
+    if (destroyedBuildingIds.size > 0) {
+      // Cleanup associated entities
+      for (const id of destroyedBuildingIds) {
+        // Find entities linked to this building
+        const linkedEntities = entities.filter((e) => e.buildingId === id);
+        for (const e of linkedEntities) {
+          await ctx.db.delete(e._id);
+        }
+      }
+
+      // Update Map with survivors
+      mapDoc.buildings = survivors;
+      await ctx.db.patch(mapDoc._id, { buildings: survivors });
+    }
+
+    // Save map if capture events occurred OR if health changed (we can't easily track health change dirty flag,
+    // but we can check if we saved above. If destroyed, we saved.
+    // If not destroyed but damaged? We need to save.
+    // Let's assume combat happens often. We should check if any building has < 100% health?
+    // Or just check if health changed?
+    // Let's save if captureEvents OR damaged OR capturing.
+    // For simplicity, let's check if we already saved (destroyed > 0).
+    const mapSaved = destroyedBuildingIds.size > 0;
+
+    if (!mapSaved) {
+      if (captureEvents.length > 0) {
         await ctx.db.patch(mapDoc._id, { buildings: mapDoc.buildings });
+      } else {
+        // Check dirty (capture or health < max)
+        // Note: We don't know max health easily here without looking up BUILDINGS constant.
+        // But we know 'processActiveEntities' modifies health in place.
+        // Let's just save if any active combat?
+        // Let's stick to the existing check + check if any building has non-full health?
+        // Actually, "processActiveEntities" runs AFTER this block.
+        // So damage happens later in this tick function.
+        // We should move this block AFTER processActiveEntities?
+        // NO. "handleCapture" is before.
+        // Destruction logic should be AFTER damage logic (which is in processActiveEntities).
+        // I will move this block to the end of the tick function, or after processActiveEntities.
+        // BUT `handleCapture` uses buildings.
+        // `processActiveEntities` uses buildings.
+        // If I destroy them before `processActiveEntities`, they won't be targeted. That's good.
+        // But damage happens in `processActiveEntities`.
+        // So I need to clean up AFTER `processActiveEntities`.
+        // I will move this logic down.
       }
     }
 
@@ -1661,7 +1767,7 @@ export const tick = internalMutation({
       mapDoc.height,
       mapDoc.buildings
     );
-    const { houses, workshops, barracks } = categorizeBuildings(
+    const { houses, workshops, barracks, turrets, walls } = categorizeBuildings(
       mapDoc.buildings
     );
 
@@ -1671,15 +1777,44 @@ export const tick = internalMutation({
     // Build Spatial Hash
     const spatialHash = new SpatialHash(10); // 10x10 chunks
     for (const e of entities) {
-      if (!e.isInside) {
+      if (!e.isInside && e.type !== "turret_gun") {
         spatialHash.insert(e.type, e._id, e.x, e.y, e.ownerId);
       }
     }
-    // Add buildings to hash? Prompt says units engage enemies.
-    // If we want them to attack buildings, we should add buildings too.
-    // For now, let's stick to units attacking units as primary combat.
+    // Add buildings to hash
+    for (const b of mapDoc.buildings) {
+      const cx = b.x + b.width / 2;
+      const cy = b.y + b.height / 2;
+      spatialHash.insert("building", b.id, cx, cy, b.ownerId);
+    }
 
-    await processActiveEntities(
+    // Spawn Turret Guns
+    for (const t of turrets) {
+      // Check if finished construction
+      if (t.constructionEnd && now < t.constructionEnd) continue;
+
+      // Check if "turret_gun" entity exists
+      const existingGun = entities.find(
+        (e) => e.type === "turret_gun" && e.buildingId === t.id
+      );
+      if (!existingGun) {
+        // Spawn it
+        const newEntity = {
+          gameId: args.gameId,
+          ownerId: t.ownerId as Id<"players">,
+          buildingId: t.id,
+          type: "turret_gun",
+          state: "idle",
+          x: t.x + t.width / 2,
+          y: t.y + t.height / 2,
+          isInside: false,
+        };
+        await ctx.db.insert("entities", newEntity);
+        entities.push(newEntity as any);
+      }
+    }
+
+    const buildingsDamaged = await processActiveEntities(
       ctx,
       entities.filter((e) => !e.isInside),
       troops,
@@ -1689,6 +1824,9 @@ export const tick = internalMutation({
       blocked,
       workshops,
       houses,
+      barracks,
+      turrets,
+      walls,
       playerCredits,
       spatialHash,
       entities,
@@ -1727,6 +1865,41 @@ export const tick = internalMutation({
     // Execute Pending Eliminations
     for (const elim of pendingEliminations) {
       await eliminatePlayer(ctx, args.gameId, elim.victimId, elim.conquerorId);
+    }
+
+    // Post-processing: Cleanup destroyed buildings (health <= 0)
+    // Runs after damage logic
+    const finalSurvivors: Building[] = [];
+    const finalDestroyedIds = new Set<string>();
+    let buildingCountChanged = false;
+
+    for (const b of mapDoc.buildings) {
+      if (
+        b.health !== undefined &&
+        b.health <= 0 &&
+        b.type !== "base_central"
+      ) {
+        finalDestroyedIds.add(b.id);
+        buildingCountChanged = true;
+      } else {
+        finalSurvivors.push(b);
+      }
+    }
+
+    if (buildingCountChanged) {
+      // Cleanup entities linked to destroyed buildings
+      for (const id of finalDestroyedIds) {
+        const linked = entities.filter((e) => e.buildingId === id);
+        for (const e of linked) {
+          await ctx.db.delete(e._id);
+        }
+      }
+      // Save new building list (also saves any health changes for survivors if we use this list)
+      await ctx.db.patch(mapDoc._id, { buildings: finalSurvivors });
+    } else if (buildingsDamaged && !mapSaved) {
+      // If no building died but some were damaged (and not saved by capture/destruction earlier)
+      // We need to save the health changes
+      await ctx.db.patch(mapDoc._id, { buildings: mapDoc.buildings });
     }
 
     await ctx.scheduler.runAfter(TICK_INTERVAL_MS, internal.game.tick, {

@@ -31,6 +31,8 @@ const entityObject = {
   reservedFactoryId: v.optional(v.string()), // Reserved workshop slot
   // Pathfinding backoff
   nextPathAttempt: v.optional(v.number()),
+  // Building Link (e.g. Turret Gun)
+  buildingId: v.optional(v.string()),
 };
 
 export default defineSchema({

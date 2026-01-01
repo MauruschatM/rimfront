@@ -92,6 +92,7 @@ export async function processActiveEntities(
         canFire &&
         (!entity.lastAttackTime || now > entity.lastAttackTime + cooldown)
       ) {
+        // Query for all enemies in range
         const enemies = spatialHash.query(entity.x, entity.y, range).filter(
           (e) =>
             e.ownerId !== entity.ownerId &&
@@ -111,7 +112,11 @@ export async function processActiveEntities(
             )
         );
 
-        // Prioritize closest
+        // Separate units from buildings for priority targeting
+        const enemyUnits = enemies.filter((e) => e.type !== "building");
+        const enemyBuildings = enemies.filter((e) => e.type === "building");
+
+        // Priority 1: Self-defense - attack nearest enemy UNIT first
         let target: {
           id: string;
           x: number;
@@ -120,11 +125,32 @@ export async function processActiveEntities(
         } | null = null;
         let minDist = Number.POSITIVE_INFINITY;
 
-        for (const enemy of enemies) {
+        for (const enemy of enemyUnits) {
           const dist = (enemy.x - entity.x) ** 2 + (enemy.y - entity.y) ** 2;
           if (dist < minDist) {
             minDist = dist;
             target = enemy;
+          }
+        }
+
+        // Priority 2: If no enemy units, check commander's target building
+        if (!target && troop?.targetBuildingId && entity.type === "soldier") {
+          const commanderTarget = enemyBuildings.find(
+            (b) => b.id === troop.targetBuildingId
+          );
+          if (commanderTarget) {
+            target = commanderTarget;
+          }
+        }
+
+        // Priority 3: If still no target, attack nearest building
+        if (!target && entity.type === "soldier") {
+          for (const enemy of enemyBuildings) {
+            const dist = (enemy.x - entity.x) ** 2 + (enemy.y - entity.y) ** 2;
+            if (dist < minDist) {
+              minDist = dist;
+              target = enemy;
+            }
           }
         }
 

@@ -95,6 +95,7 @@ export default defineSchema({
     barracksId: v.string(), // ID from map.buildings
     ownerId: v.id("players"),
     targetPos: v.optional(v.object({ x: v.number(), y: v.number() })),
+    targetBuildingId: v.optional(v.string()), // Enemy building to attack
     lastSpawnTime: v.optional(v.number()),
     state: v.string(), // "idle", "moving" (Troop level state)
   }).index("by_gameId", ["gameId"]),

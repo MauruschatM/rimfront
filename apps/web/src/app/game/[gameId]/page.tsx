@@ -16,6 +16,7 @@ import {
 import { useParams, useRouter } from "next/navigation";
 import * as React from "react";
 import { GameCanvas } from "@/components/game/GameCanvas";
+import { VictoryDefeatOverlay } from "@/components/game/VictoryDefeatOverlay";
 import { Button } from "@/components/ui/button";
 import { Vignette } from "@/components/ui/vignette";
 import { authClient } from "@/lib/auth-client";
@@ -42,6 +43,7 @@ export default function GamePage() {
   const deleteGame = useMutation(api.game.deleteGame);
   const placeBuilding = useMutation(api.game.placeBuilding);
   const moveTroop = useMutation(api.game.moveTroop);
+  const attackBuilding = useMutation(api.game.attackBuilding);
 
   // Modes: Build, Defense (Troop Command)
   const [mode, setMode] = React.useState<"none" | "build" | "defense">("none");
@@ -111,12 +113,36 @@ export default function GamePage() {
     }
   };
 
+  const handleAttackBuilding = async (buildingId: string) => {
+    if (!selectedTroopId) {
+      return;
+    }
+    try {
+      await attackBuilding({
+        gameId,
+        troopId: selectedTroopId as Id<"troops">,
+        buildingId,
+      });
+    } catch (e) {
+      console.error("Failed to attack building:", e);
+    }
+  };
+
   // Handle map clicks based on mode
   const handleMapClick = (x: number, y: number) => {
     if (mode === "build" && selectedBuilding) {
       handlePlaceBuilding(selectedBuilding, x, y);
     } else if (mode === "defense" && selectedTroopId) {
-      handleMoveTroop(x, y);
+      // Check if clicking on enemy building
+      const clickedBuilding = gameState?.buildings.find(
+        (b: any) =>
+          x >= b.x && x < b.x + b.width && y >= b.y && y < b.y + b.height
+      );
+      if (clickedBuilding && clickedBuilding.ownerId !== myPlayer?._id) {
+        handleAttackBuilding(clickedBuilding.id);
+      } else {
+        handleMoveTroop(x, y);
+      }
     }
   };
 
@@ -523,68 +549,14 @@ export default function GamePage() {
       )}
 
       {/* End Game Screen */}
-      {game.status === "ended" && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/90">
-          <div className="pixel-corners flex min-w-[500px] flex-col items-center border-2 border-primary bg-background p-8">
-            <h1
-              className={cn(
-                "mb-8 font-bold font-mono text-6xl",
-                myScore === Math.max(...players.map(calculateScore))
-                  ? "text-yellow-400"
-                  : "text-red-500"
-              )}
-            >
-              {myScore === Math.max(...players.map(calculateScore))
-                ? "VICTORY"
-                : "DEFEAT"}
-            </h1>
-
-            <div className="mb-8 w-full">
-              <h3 className="mb-4 border-white/20 border-b pb-2 font-mono text-white text-xl">
-                LEADERBOARD
-              </h3>
-              <div className="flex flex-col gap-2">
-                {players
-                  .map((p) => ({
-                    ...p,
-                    score: calculateScore(p),
-                  }))
-                  .sort((a, b) => b.score - a.score)
-                  .map((p, i) => (
-                    <div
-                      className={cn(
-                        "flex items-center justify-between p-2 font-mono",
-                        p._id === myPlayer._id
-                          ? "bg-primary/20 text-primary"
-                          : "text-white"
-                      )}
-                      key={p._id}
-                    >
-                      <div className="flex items-center gap-4">
-                        <span className="w-6 text-muted-foreground">
-                          #{i + 1}
-                        </span>
-                        <span>{p.name}</span>
-                        {p.status === "eliminated" && (
-                          <span className="text-red-500 text-xs">(DEAD)</span>
-                        )}
-                      </div>
-                      <span className="font-bold">
-                        {p.score.toLocaleString()}
-                      </span>
-                    </div>
-                  ))}
-              </div>
-            </div>
-
-            <Button
-              className="pixel-corners w-full font-mono"
-              onClick={handleEndGame}
-            >
-              RETURN TO LOBBY
-            </Button>
-          </div>
-        </div>
+      {game.status === "ended" && myPlayer && (
+        <VictoryDefeatOverlay
+          calculateScore={calculateScore}
+          isWinner={myScore === Math.max(...players.map(calculateScore))}
+          myPlayerId={myPlayer._id}
+          onComplete={handleEndGame}
+          players={players}
+        />
       )}
     </div>
   );

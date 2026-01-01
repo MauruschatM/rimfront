@@ -58,6 +58,7 @@ export interface Troop {
   ownerId: Id<"players">;
   barracksId: string;
   targetPos?: { x: number; y: number };
+  targetBuildingId?: string; // Enemy building to attack
   lastSpawnTime?: number;
   state: string;
 }

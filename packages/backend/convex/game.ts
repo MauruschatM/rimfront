@@ -609,9 +609,10 @@ export const moveTroop = mutation({
       throw new Error("Not your troop");
     }
 
-    // Update Target
+    // Update Target (clear building target when moving to position)
     await ctx.db.patch(troop._id, {
       targetPos: { x: args.targetX, y: args.targetY },
+      targetBuildingId: undefined,
       state: "moving",
     });
 
@@ -627,6 +628,87 @@ export const moveTroop = mutation({
         path: undefined,
         pathIndex: undefined,
         nextPathAttempt: undefined, // Reset backoff so they react immediately
+      });
+    }
+  },
+});
+
+export const attackBuilding = mutation({
+  args: {
+    gameId: v.id("games"),
+    troopId: v.id("troops"),
+    buildingId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthorized");
+    }
+
+    const troop = await ctx.db.get(args.troopId);
+    if (!troop) {
+      throw new Error("Troop not found");
+    }
+
+    // Check ownership
+    const player = await ctx.db
+      .query("players")
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("gameId"), args.gameId),
+          q.eq(q.field("userId"), identity.subject)
+        )
+      )
+      .first();
+    if (!player) {
+      throw new Error("Player not found");
+    }
+
+    if (troop.ownerId !== player._id) {
+      throw new Error("Not your troop");
+    }
+
+    // Get the target building
+    const map = await ctx.db
+      .query("maps")
+      .withIndex("by_gameId", (q) => q.eq("gameId", args.gameId))
+      .first();
+    if (!map) {
+      throw new Error("Map not found");
+    }
+
+    const building = map.buildings.find((b: any) => b.id === args.buildingId);
+    if (!building) {
+      throw new Error("Building not found");
+    }
+
+    // Verify it's an enemy building
+    if (building.ownerId === player._id) {
+      throw new Error("Cannot attack your own building");
+    }
+
+    // Set building target and move troop towards it
+    const targetX = building.x + building.width / 2;
+    const targetY = building.y + building.height / 2;
+
+    await ctx.db.patch(troop._id, {
+      targetPos: { x: targetX, y: targetY },
+      targetBuildingId: args.buildingId,
+      state: "moving",
+    });
+
+    // Reset members to ensure they pathfind
+    const members = await ctx.db
+      .query("entities")
+      .withIndex("by_troopId", (q) => q.eq("troopId", troop._id))
+      .collect();
+
+    for (const member of members) {
+      await ctx.db.patch(member._id, {
+        state: "idle",
+        path: undefined,
+        pathIndex: undefined,
+        nextPathAttempt: undefined,
       });
     }
   },

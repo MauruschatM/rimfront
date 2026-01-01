@@ -187,28 +187,35 @@ export function BuildingsRenderer({
             {/* Capture Progress Bar */}
             {b.captureStart && (
               <group position={[centerX, b.y + b.height + 1.5, 3]}>
+                {/* Background */}
                 <mesh position={[0, 0, 0]}>
                   <planeGeometry args={[3, 0.4]} />
                   <meshBasicMaterial color="black" />
                 </mesh>
-                <mesh
-                  position={[
-                    -1.5 +
-                      (Math.min((Date.now() - b.captureStart) / 30_000, 1) *
-                        3) /
-                        2,
-                    0,
-                    0.1,
-                  ]}
+                {/* Progress (5s for buildings, 30s for bases) */}
+                {(() => {
+                  const captureTime = b.type === "base_central" ? 30_000 : 5000;
+                  const progress = Math.min(
+                    (Date.now() - b.captureStart) / captureTime,
+                    1
+                  );
+                  return (
+                    <mesh position={[-1.5 + (progress * 3) / 2, 0, 0.1]}>
+                      <planeGeometry args={[progress * 3, 0.3]} />
+                      <meshBasicMaterial color="red" />
+                    </mesh>
+                  );
+                })()}
+                {/* "CAPTURE" label */}
+                <Text
+                  anchorX="center"
+                  anchorY="bottom"
+                  color="red"
+                  fontSize={0.4}
+                  position={[0, 0.4, 0.1]}
                 >
-                  <planeGeometry
-                    args={[
-                      Math.min((Date.now() - b.captureStart) / 30_000, 1) * 3,
-                      0.3,
-                    ]}
-                  />
-                  <meshBasicMaterial color="red" />
-                </mesh>
+                  CAPTURE
+                </Text>
               </group>
             )}
           </group>

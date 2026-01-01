@@ -16,6 +16,11 @@ export async function handleSpawning(
   const knownFamilies = new Set(families.map((f) => f.homeId));
   const knownTroops = new Set(troops.map((t) => t.barracksId));
 
+  // Helper to check if building is being captured
+  const isBeingCaptured = (building: Building) =>
+    building.captureStart !== undefined &&
+    building.capturingOwnerId !== undefined;
+
   for (const b of barracks) {
     if (
       (b.constructionEnd && now < b.constructionEnd) ||
@@ -90,6 +95,12 @@ export async function handleSpawning(
       continue;
     }
 
+    // Skip if home is being captured
+    const home = houses.find((h) => h.id === fam.homeId);
+    if (home && isBeingCaptured(home)) {
+      continue;
+    }
+
     const memberCount = entities.filter((e) => e.familyId === fam._id).length;
     // Only spawn if under capacity AND 30 seconds have passed
     if (memberCount < 4) {
@@ -117,6 +128,12 @@ export async function handleSpawning(
   for (const troop of troopsUpdated) {
     // Check if barracks is powered
     if (!poweredBuildingIds.has(troop.barracksId)) {
+      continue;
+    }
+
+    // Skip if barracks is being captured
+    const barracksBuilding = barracks.find((b) => b.id === troop.barracksId);
+    if (barracksBuilding && isBeingCaptured(barracksBuilding)) {
       continue;
     }
 

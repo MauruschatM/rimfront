@@ -63,6 +63,7 @@ export default defineSchema({
     inflation: v.number(), // Current inflation multiplier (min 1.0, doubles on build, decays -0.1/round)
     status: v.optional(v.string()), // "active", "eliminated", "spectator"
     eliminatedBy: v.optional(v.id("players")),
+    lastBetrayalTime: v.optional(v.number()), // Time when alliance was broken by this player
   }),
   maps: defineTable({
     gameId: v.id("games"),
@@ -97,4 +98,15 @@ export default defineSchema({
     lastSpawnTime: v.optional(v.number()),
     state: v.string(), // "idle", "moving" (Troop level state)
   }).index("by_gameId", ["gameId"]),
+  diplomacy: defineTable({
+    gameId: v.id("games"),
+    player1Id: v.id("players"),
+    player2Id: v.id("players"),
+    status: v.string(), // "pending", "allied"
+    updatedAt: v.number(),
+  })
+    .index("by_gameId", ["gameId"])
+    .index("by_players", ["player1Id", "player2Id"])
+    .index("by_player1", ["player1Id"])
+    .index("by_player2", ["player2Id"]),
 });

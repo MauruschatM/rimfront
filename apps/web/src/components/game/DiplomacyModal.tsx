@@ -182,7 +182,7 @@ export function DiplomacyModal({
                   <Button onClick={handleReject} variant="outline">
                     Cancel Request
                   </Button>
-                )}
+                ) : null}
                 {status === "pending" && !isSender && (
                   <div className="flex gap-2">
                     <Button onClick={handleAccept} variant="default">

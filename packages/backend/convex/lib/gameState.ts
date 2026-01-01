@@ -14,13 +14,6 @@ interface Building {
   capturingOwnerId?: string;
 }
 
-interface Structure {
-  x: number;
-  y: number;
-  type: string;
-  width: number;
-  height: number;
-}
 
 // --------------------------------------------------------------------------
 // POWER / ENERGY SYSTEM
@@ -43,12 +36,15 @@ export function calculatePoweredBuildings(buildings: Building[]): Set<string> {
     if (!buildingsByOwner[b.ownerId]) {
       buildingsByOwner[b.ownerId] = [];
     }
-    buildingsByOwner[b.ownerId].push(b);
+    const ownerBuildings = buildingsByOwner[b.ownerId];
+    if (ownerBuildings) {
+      ownerBuildings.push(b);
+    }
   }
 
   // For each owner, find connected components starting from Base Central
   for (const ownerId in buildingsByOwner) {
-    const playerBuildings = buildingsByOwner[ownerId];
+    const playerBuildings = buildingsByOwner[ownerId] ?? [];
     const queue: Building[] = [];
     const visited = new Set<string>();
 
@@ -63,7 +59,8 @@ export function calculatePoweredBuildings(buildings: Building[]): Set<string> {
 
     // 2. BFS
     while (queue.length > 0) {
-      const current = queue.shift()!;
+      const current = queue.shift();
+      if (!current) break;
       const cx = current.x + current.width / 2;
       const cy = current.y + current.height / 2;
       const cRadius = Math.max(current.width, current.height) / 2;

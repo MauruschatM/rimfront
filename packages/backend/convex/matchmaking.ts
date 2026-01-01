@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import { mutation, query } from "./_generated/server";
 import { generateMap, PLANETS } from "./lib/mapgen";
 
@@ -122,10 +123,12 @@ export const findOrCreateLobby = mutation({
         }
 
         // Assign to smaller team
-        if ((teamCounts[teamA._id] || 0) <= (teamCounts[teamB._id] || 0)) {
-          teamId = teamA._id;
-        } else {
-          teamId = teamB._id;
+        if (teamA && teamB) {
+          if ((teamCounts[teamA._id] || 0) <= (teamCounts[teamB._id] || 0)) {
+            teamId = teamA._id;
+          } else {
+            teamId = teamB._id;
+          }
         }
       } else {
         // "Duos" or "Squads" Logic
@@ -162,7 +165,7 @@ export const findOrCreateLobby = mutation({
       userId: args.userId,
       isBot: false,
       name: cleanName,
-      teamId,
+      teamId: teamId as Id<"teams">,
       credits: 0,
       inflation: 1.0,
     });

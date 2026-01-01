@@ -44,10 +44,11 @@ class MinHeap {
 
   private bubbleUp(index: number) {
     const node = this.heap[index];
+    if (!node) return;
     while (index > 0) {
       const parentIndex = Math.floor((index - 1) / 2);
       const parent = this.heap[parentIndex];
-      if (node.f >= parent.f) break;
+      if (!parent || node.f >= parent.f) break;
       this.heap[parentIndex] = node;
       this.heap[index] = parent;
       index = parentIndex;
@@ -58,6 +59,7 @@ class MinHeap {
   private sinkDown(index: number) {
     const length = this.heap.length;
     const node = this.heap[index];
+    if (!node) return;
     while (true) {
       const leftChildIndex = 2 * index + 1;
       const rightChildIndex = 2 * index + 2;
@@ -65,25 +67,33 @@ class MinHeap {
 
       if (leftChildIndex < length) {
         const leftChild = this.heap[leftChildIndex];
-        if (leftChild.f < node.f) {
+        if (leftChild && leftChild.f < node.f) {
           swap = leftChildIndex;
         }
       }
 
       if (rightChildIndex < length) {
         const rightChild = this.heap[rightChildIndex];
+        const swapNode = swap !== -1 ? this.heap[swap] : node;
         if (
-          (swap === -1 && rightChild.f < node.f) ||
-          (swap !== -1 && rightChild.f < this.heap[swap].f)
+          rightChild &&
+          swapNode &&
+          ((swap === -1 && rightChild.f < node.f) ||
+            (swap !== -1 && rightChild.f < swapNode.f))
         ) {
           swap = rightChildIndex;
         }
       }
 
       if (swap === -1) break;
-      this.heap[index] = this.heap[swap];
-      this.heap[swap] = node;
-      index = swap;
+      const swapNode = this.heap[swap];
+      if (swapNode) {
+        this.heap[index] = swapNode;
+        this.heap[swap] = node;
+        index = swap;
+      } else {
+        break;
+      }
     }
   }
 }
@@ -93,10 +103,10 @@ class MinHeap {
  * Returns a set of "blocked" strings "x,y" for O(1) lookup.
  */
 export function createCollisionMap(
-  width: number,
-  height: number,
+  _width: number,
+  _height: number,
   buildings: any[],
-  tiles?: number[]
+  _tiles?: number[]
 ): Set<string> {
   const blocked = new Set<string>();
 
@@ -219,7 +229,8 @@ export function findPath(
       return null;
     }
 
-    const currentNode = openList.pop()!;
+    const currentNode = openList.pop();
+    if (!currentNode) break;
     const currentKey = `${currentNode.x},${currentNode.y}`;
 
     if (currentNode.x === realEnd.x && currentNode.y === realEnd.y) {

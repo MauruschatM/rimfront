@@ -1,7 +1,7 @@
 ---
+trigger: always_on
 description: Implement TanStack Form when creating or updating forms to achieve robust validation and a type-safe solution
 globs: apps/web/**/*.tsx,apps/web/**/*.ts
-alwaysApply: false
 ---
 
 # TanStack Form Rules

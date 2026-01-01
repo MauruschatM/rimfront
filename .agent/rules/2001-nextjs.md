@@ -1,8 +1,9 @@
 ---
+trigger: always_on
 description: Use these rules when building Next.js projects
 globs: next.config.ts,apps/web/**/*.tsx,apps/web/**/*.ts
-alwaysApply: false
 ---
+
 # Next.js Rules
 
 <author>blefnk/rules</author>

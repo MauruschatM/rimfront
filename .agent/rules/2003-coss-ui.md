@@ -1,7 +1,7 @@
 ---
+trigger: always_on
 description: Use Coss UI components when designing to ensure consistent styling
 globs: apps/web/**/*.tsx
-alwaysApply: false
 ---
 
 # Coss UI Rules

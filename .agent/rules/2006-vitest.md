@@ -1,7 +1,7 @@
 ---
+trigger: always_on
 description: Apply these testing rules when verifying or writing new test suites to ensure quality and coverage
 globs: **/*.test.ts
-alwaysApply: false
 ---
 
 # Testing Standards

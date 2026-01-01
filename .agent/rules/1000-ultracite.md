@@ -1,7 +1,7 @@
 ---
+trigger: always_on
 description: Ultracite Rules - AI-Ready Formatter and Linter
 globs: "**/*.{ts,tsx,js,jsx,json,jsonc,html,vue,svelte,astro,css,yaml,yml,graphql,gql,md,mdx,grit}"
-alwaysApply: false
 ---
 
 # Ultracite Code Standards

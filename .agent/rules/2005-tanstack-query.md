@@ -1,7 +1,7 @@
 ---
+trigger: always_on
 description: Manage async client-side data with TanStack Query (AKA React Query) (queries, mutations, invalidation)
 globs: apps/web/**/*.tsx,apps/web/**/*.ts
-alwaysApply: false
 ---
 
 # TanStack Query Rules

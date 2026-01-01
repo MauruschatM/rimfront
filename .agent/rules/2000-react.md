@@ -1,7 +1,7 @@
 ---
+trigger: always_on
 description: Use React rules when building UI to produce maintainable components
 globs: apps/web/**/*.tsx
-alwaysApply: false
 ---
 
 # React Rules

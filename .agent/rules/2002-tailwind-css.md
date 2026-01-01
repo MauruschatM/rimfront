@@ -1,8 +1,9 @@
 ---
+trigger: always_on
 description: Apply Tailwind utilities when styling to keep layouts simple and uniform
 globs: apps/web/**/*.tsx,apps/web/**/*.css
-alwaysApply: false
 ---
+
 # Tailwind CSS Rules
 
 <author>blefnk/rules</author>

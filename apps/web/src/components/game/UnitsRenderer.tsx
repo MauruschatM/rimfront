@@ -258,7 +258,7 @@ export function UnitsRenderer({
       )}
       {commanders.length > 0 && (
         <instancedMesh
-          args={[undefined as any, undefined as any, commanders.length]}
+          args={[undefined, undefined, commanders.length]}
           onClick={(e) => {
             handleUnitClick(e, commanders);
           }}

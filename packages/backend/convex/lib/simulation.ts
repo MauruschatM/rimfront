@@ -94,8 +94,17 @@ export async function runGameTick(ctx: any, gameId: Id<"games">) {
     .withIndex("by_gameId", (q: any) => q.eq("gameId", gameId))
     .collect()) as Entity[];
 
-  // 2. Capture Logic
-  const captureEvents = handleCapture(mapDoc.buildings, entities, now);
+  // ⚡ Bolt Optimization: Build SpatialHash ONCE and reuse for Capture logic
+  // This avoids iterating O(Buildings * Units) in handleCapture
+  const spatialHash = new SpatialHash(10); // 10x10 chunks
+  for (const e of entities) {
+    if (!e.isInside && e.type !== "turret_gun") {
+      spatialHash.insert(e.type, e._id, e.x, e.y, e.ownerId);
+    }
+  }
+
+  // 2. Capture Logic (Now O(Buildings * LocalUnits) instead of O(Buildings * TotalUnits))
+  const captureEvents = handleCapture(mapDoc.buildings, spatialHash, now);
 
   // 2.1 Destruction Logic (Cleanup destroyed buildings)
   // We filter out buildings with health <= 0
@@ -203,14 +212,7 @@ export async function runGameTick(ctx: any, gameId: Id<"games">) {
   // 2.1 Power Grid Logic
   const poweredBuildingIds = calculatePoweredBuildings(mapDoc.buildings);
 
-  // Build Spatial Hash
-  const spatialHash = new SpatialHash(10); // 10x10 chunks
-  for (const e of entities) {
-    if (!e.isInside && e.type !== "turret_gun") {
-      spatialHash.insert(e.type, e._id, e.x, e.y, e.ownerId);
-    }
-  }
-  // Add buildings to hash
+  // Add buildings to hash (done AFTER capture logic so combat sees new owners)
   for (const b of mapDoc.buildings) {
     const cx = b.x + b.width / 2;
     const cy = b.y + b.height / 2;

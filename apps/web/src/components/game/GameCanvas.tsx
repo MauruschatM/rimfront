@@ -1,6 +1,7 @@
 "use client";
 
 import { api } from "@packages/backend/convex/_generated/api";
+import type { Doc } from "@packages/backend/convex/_generated/dataModel";
 import { Canvas } from "@react-three/fiber";
 import { useMutation, useQuery } from "convex/react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
@@ -64,18 +65,25 @@ interface Player {
   lastBetrayalTime?: number;
 }
 
+interface Structure {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 interface GameMap {
   _id: string;
   width: number;
   height: number;
   planetType: string;
   tiles?: number[]; // Legacy
-  chunks?: any[];
-  structures: any[];
+  chunks?: Doc<"chunks">[];
+  structures: Structure[];
 }
 
 interface GameCanvasProps {
-  game: any;
+  game: Doc<"games">;
   staticMap: GameMap | null;
   buildings: Building[];
   players: Player[];
@@ -185,7 +193,7 @@ export function GameCanvas({
 
   const myPlayer = players.find((p) => p._id === myPlayerId);
   const isConfused =
-    myPlayer?.lastBetrayalTime &&
+    !!myPlayer?.lastBetrayalTime &&
     Date.now() < myPlayer.lastBetrayalTime + 60_000;
 
   if (!staticMap) return null;
@@ -324,26 +332,7 @@ export function GameCanvas({
       if (entity.state === "working" && entity.workplaceId) {
         workers.push({ id: entity._id, x: entity.x, y: entity.y });
       }
-
-      // Stats Logic (Still use ALL entities for stats if we want accurate counts, OR filter?
-      // Typically stats like "4/4 members" should reflect reality, not visibility?
-      // But the prompt says "The Fog hides enemy buildings".
-      // The stats are used for "BuildingsRenderer" overlay (e.g. 2/4 workers).
-      // If I filter buildings, I don't see the overlay anyway.
-      // So this logic only runs for visible buildings.
-      // Wait, I should probably count stats from ALL entities, but only display for filtered buildings.
-      // But `stats` is used by `BuildingsRenderer`.
-      // Let's compute stats for ALL entities to be safe, but only render filtered buildings.
-      // Actually, if I can't see the unit, do I know it's working in the enemy factory?
-      // Fog of War usually hides that info.
-      // So computing stats only from visible entities is correct for enemy buildings.
-      // For my buildings, I see everything.
-      // So yes, using `filteredEntities` is correct.
     }
-
-    // Re-loop all entities for stats on MY buildings if some of my units are invisible?
-    // My units are always visible. So filteredEntities includes all mine.
-    // So this is fine.
 
     // Calculate stats for buildings (Active/Working counts)
     for (const entity of filteredEntities) {

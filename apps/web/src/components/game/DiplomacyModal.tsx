@@ -1,7 +1,8 @@
 import { api } from "@packages/backend/convex/_generated/api";
+import type { Id } from "@packages/backend/convex/_generated/dataModel";
 import { useMutation, useQuery } from "convex/react";
 import { Shield } from "lucide-react";
-import * as React from "react";
+import React from "react";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -38,6 +39,119 @@ interface DiplomacyModalProps {
   myPlayerId: string;
 }
 
+function TeammateStatus() {
+  return (
+    <div className="text-center">
+      <Shield className="mx-auto mb-2 h-12 w-12 text-blue-500" />
+      <p className="mb-4 font-bold text-blue-500">TEAMMATE</p>
+      <p className="text-muted-foreground text-xs">
+        You are on the same team. Friendly fire is disabled and you share vision.
+      </p>
+    </div>
+  );
+}
+
+interface AllianceActionsProps {
+  status: string;
+  isSender: boolean;
+  timeLeft: number;
+  handleRequest: () => void;
+  handleAccept: () => void;
+  handleReject: () => void;
+  handleBreak: () => void;
+  handleRenew: () => void;
+  subMode: string;
+}
+
+function AllianceActions({
+  status,
+  isSender,
+  timeLeft,
+  handleRequest,
+  handleAccept,
+  handleReject,
+  handleBreak,
+  handleRenew,
+  subMode,
+}: AllianceActionsProps) {
+  if (subMode !== "ffa") {
+    return (
+      <div className="text-center">
+        <p className="mb-4 text-muted-foreground">
+          Diplomacy disabled in Team modes
+        </p>
+      </div>
+    );
+  }
+
+  if (status === "none") {
+    return <Button onClick={handleRequest}>Request Alliance</Button>;
+  }
+
+  if (status === "pending") {
+    if (isSender) {
+      return (
+        <Button onClick={handleReject} variant="outline">
+          Cancel Request
+        </Button>
+      );
+    }
+    return (
+      <div className="flex gap-2">
+        <Button onClick={handleAccept} variant="default">
+          Accept Alliance
+        </Button>
+        <Button onClick={handleReject} variant="destructive">
+          Reject
+        </Button>
+      </div>
+    );
+  }
+
+  if (status === "allied") {
+    return (
+      <div className="flex flex-col gap-2">
+        <div className="text-center font-bold text-green-500">Allied</div>
+        <div className="text-center font-mono text-muted-foreground text-sm">
+          {Math.floor(timeLeft / 1000 / 60)}:
+          {(Math.floor(timeLeft / 1000) % 60).toString().padStart(2, "0")}
+        </div>
+
+        {timeLeft <= 30_000 && (
+          <Button className="w-full" onClick={handleRenew} variant="default">
+            Renew Alliance
+          </Button>
+        )}
+
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button variant="destructive">Break Alliance</Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Breaking an alliance is a treacherous act. Your troops will be
+                confused and ineffective for 1 minute.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={handleBreak}
+              >
+                Yes, Break Alliance
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+    );
+  }
+  return null;
+}
+
 export function DiplomacyModal({
   gameId,
   isOpen,
@@ -45,8 +159,12 @@ export function DiplomacyModal({
   targetPlayerId,
   myPlayerId,
 }: DiplomacyModalProps) {
-  const alliances = useQuery(api.diplomacy.getAlliances, { gameId });
-  const gameState = useQuery(api.game.getGameState, { gameId });
+  const alliances = useQuery(api.diplomacy.getAlliances, {
+    gameId: gameId as Id<"games">,
+  });
+  const gameState = useQuery(api.game.getGameState, {
+    gameId: gameId as Id<"games">,
+  });
   const players = gameState?.players;
   const subMode = gameState?.game?.subMode || "ffa";
 
@@ -62,12 +180,16 @@ export function DiplomacyModal({
     return () => clearInterval(timer);
   }, []);
 
-  if (!(players && alliances)) return null;
+  if (!(players && alliances)) {
+    return null;
+  }
 
   const targetPlayer = players.find((p) => p._id === targetPlayerId);
   const myPlayer = players.find((p) => p._id === myPlayerId);
 
-  if (!(targetPlayer && myPlayer)) return null;
+  if (!(targetPlayer && myPlayer)) {
+    return null;
+  }
 
   // Find existing relationship
   const relationship = alliances.find(
@@ -76,7 +198,6 @@ export function DiplomacyModal({
       (a.player1Id === targetPlayerId && a.player2Id === myPlayerId)
   );
 
-  // Check if teammate (Fixed Alliance)
   const isTeammate =
     myPlayer.teamId &&
     targetPlayer.teamId &&
@@ -90,52 +211,60 @@ export function DiplomacyModal({
   const handleRequest = async () => {
     try {
       await requestAlliance({
-        gameId: gameId as any,
-        targetPlayerId: targetPlayerId as any,
+        gameId: gameId as Id<"games">,
+        targetPlayerId: targetPlayerId as Id<"players">,
       });
       toast.success("Alliance request sent");
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (e: unknown) {
+      if (e instanceof Error) toast.error(e.message);
     }
   };
 
   const handleRenew = async () => {
-    if (!relationship) return;
+    if (!relationship) {
+      return;
+    }
     try {
       await renewAlliance({ diplomacyId: relationship._id });
       toast.success("Alliance renewed!");
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (e: unknown) {
+      if (e instanceof Error) toast.error(e.message);
     }
   };
 
   const handleAccept = async () => {
-    if (!relationship) return;
+    if (!relationship) {
+      return;
+    }
     try {
       await acceptAlliance({ diplomacyId: relationship._id });
       toast.success("Alliance accepted");
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (e: unknown) {
+      if (e instanceof Error) toast.error(e.message);
     }
   };
 
   const handleReject = async () => {
-    if (!relationship) return;
+    if (!relationship) {
+      return;
+    }
     try {
       await rejectAlliance({ diplomacyId: relationship._id });
       toast.info("Alliance request rejected/cancelled");
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (e: unknown) {
+      if (e instanceof Error) toast.error(e.message);
     }
   };
 
   const handleBreak = async () => {
-    if (!relationship) return;
+    if (!relationship) {
+      return;
+    }
     try {
       await breakAlliance({ diplomacyId: relationship._id });
       toast.warning("Alliance broken! Troops are confused.");
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (e: unknown) {
+      if (e instanceof Error) toast.error(e.message);
     }
   };
 
@@ -156,92 +285,25 @@ export function DiplomacyModal({
                 Status:{" "}
                 {targetPlayer.status === "active" ? "Active" : "Eliminated"}
                 <br />
-                Credits: {Math.floor(targetPlayer.credits)}
+                Credits: {Math.floor(targetPlayer.credits || 0)}
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="flex flex-col gap-2">
                 {isTeammate ? (
-                  <div className="text-center">
-                    <Shield className="mx-auto mb-2 h-12 w-12 text-blue-500" />
-                    <p className="mb-4 font-bold text-blue-500">TEAMMATE</p>
-                    <p className="text-muted-foreground text-xs">
-                      You are on the same team. Friendly fire is disabled and
-                      you share vision.
-                    </p>
-                  </div>
-                ) : subMode !== "ffa" ? (
-                  <div className="text-center">
-                    <p className="mb-4 text-muted-foreground">
-                      Diplomacy disabled in Team modes
-                    </p>
-                  </div>
-                ) : status === "none" ? (
-                  <Button onClick={handleRequest}>Request Alliance</Button>
-                ) : status === "pending" && isSender ? (
-                  <Button onClick={handleReject} variant="outline">
-                    Cancel Request
-                  </Button>
-                ) : null}
-                {status === "pending" && !isSender && (
-                  <div className="flex gap-2">
-                    <Button onClick={handleAccept} variant="default">
-                      Accept Alliance
-                    </Button>
-                    <Button onClick={handleReject} variant="destructive">
-                      Reject
-                    </Button>
-                  </div>
-                )}
-                {status === "allied" && (
-                  <div className="flex flex-col gap-2">
-                    <div className="text-center font-bold text-green-500">
-                      Allied
-                    </div>
-                    <div className="text-center font-mono text-muted-foreground text-sm">
-                      {Math.floor(timeLeft / 1000 / 60)}:
-                      {(Math.floor(timeLeft / 1000) % 60)
-                        .toString()
-                        .padStart(2, "0")}
-                    </div>
-
-                    {timeLeft <= 30_000 && (
-                      <Button
-                        className="w-full"
-                        onClick={handleRenew}
-                        variant="default"
-                      >
-                        Renew Alliance
-                      </Button>
-                    )}
-
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button variant="destructive">Break Alliance</Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>
-                            Are you absolutely sure?
-                          </AlertDialogTitle>
-                          <AlertDialogDescription>
-                            Breaking an alliance is a treacherous act. Your
-                            troops will be confused and ineffective for 1
-                            minute.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Cancel</AlertDialogCancel>
-                          <AlertDialogAction
-                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                            onClick={handleBreak}
-                          >
-                            Yes, Break Alliance
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  </div>
+                  <TeammateStatus />
+                ) : (
+                  <AllianceActions
+                    handleAccept={handleAccept}
+                    handleBreak={handleBreak}
+                    handleReject={handleReject}
+                    handleRenew={handleRenew}
+                    handleRequest={handleRequest}
+                    isSender={isSender}
+                    status={status}
+                    subMode={subMode}
+                    timeLeft={timeLeft}
+                  />
                 )}
               </div>
             </CardContent>

@@ -18,6 +18,30 @@ export const findOrCreateLobby = mutation({
       throw new Error("Player name must be between 2 and 20 characters");
     }
 
+    // Security: One active game per user (Rate Limiting / Anti-Spam)
+    if (args.userId) {
+      // Check only the most recent player records to avoid N+1 on full history
+      const existingPlayers = await ctx.db
+        .query("players")
+        .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+        .order("desc") // Most recent first (by Creation ID)
+        .take(10);
+
+      for (const p of existingPlayers) {
+        // Skip if the player was already eliminated
+        if (p.status === "eliminated" || p.status === "spectator") {
+          continue;
+        }
+
+        const g = await ctx.db.get(p.gameId);
+        if (g && (g.status === "waiting" || g.status === "active")) {
+          // User is already in a game. Redirect them to it.
+          // This prevents joining multiple lobbies simultaneously.
+          return { gameId: g._id, playerId: p._id };
+        }
+      }
+    }
+
     // 1. Look for an existing waiting game of this type/subMode
     const waitingGames = await ctx.db
       .query("games")

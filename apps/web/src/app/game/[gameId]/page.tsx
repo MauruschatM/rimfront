@@ -25,6 +25,8 @@ const BUILDINGS_INFO = [
   { id: "house", name: "House", width: 2, height: 2, baseCost: 2000 },
   { id: "workshop", name: "Workshop", width: 4, height: 4, baseCost: 4000 },
   { id: "barracks", name: "Barracks", width: 3, height: 3, baseCost: 4000 },
+  { id: "wall", name: "Wall", width: 1, height: 1, baseCost: 500 },
+  { id: "turret", name: "Turret", width: 2, height: 2, baseCost: 5000 },
 ];
 
 export default function GamePage() {

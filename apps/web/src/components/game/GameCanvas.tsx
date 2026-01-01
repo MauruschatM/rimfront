@@ -2,8 +2,8 @@
 
 import { api } from "@packages/backend/convex/_generated/api";
 import { Canvas } from "@react-three/fiber";
-import { useMutation } from "convex/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMutation, useQuery } from "convex/react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { BuildingsRenderer } from "./BuildingsRenderer";
 import { CameraManager } from "./CameraManager";
 import { DiplomacyModal } from "./DiplomacyModal";
@@ -61,6 +61,7 @@ interface Player {
   userId?: string;
   name?: string;
   teamId?: string;
+  lastBetrayalTime?: number;
 }
 
 interface GameMap {
@@ -428,13 +429,13 @@ export function GameCanvas({
       memberEntities: members,
       commanderEntities: commanders,
       soldierEntities: soldiers,
-      turretGuns,
+      turretGunEntities: turretGuns,
       workingEntityPositions: workers,
     };
   }, [entities, families, troops, buildings, alliances, myPlayerId]);
 
   return (
-    <React.Fragment>
+    <Fragment>
       <Canvas
         camera={{
           zoom: 20,
@@ -513,6 +514,6 @@ export function GameCanvas({
       {isConfused && (
         <div className="pointer-events-none fixed inset-0 z-50 animate-pulse bg-red-500/10 mix-blend-multiply" />
       )}
-    </React.Fragment>
+    </Fragment>
   );
 }

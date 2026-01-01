@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import { mutation, query } from "./_generated/server";
 import { generateMap, PLANETS } from "./lib/mapgen";
 
@@ -56,7 +57,7 @@ export const findOrCreateLobby = mutation({
     }
 
     // 3. Add player to the game
-    let teamId: string | undefined;
+    let teamId: Id<"teams"> | undefined;
 
     if (args.subMode !== "ffa" && gameIdToJoin) {
       const teams = await ctx.db
@@ -98,12 +99,7 @@ export const findOrCreateLobby = mutation({
             name: "Alpha",
             type: "alpha",
           });
-          teamA = {
-            _id: id,
-            gameId: gameIdToJoin,
-            name: "Alpha",
-            type: "alpha",
-          };
+          teamA = (await ctx.db.get(id)) ?? undefined;
           teamCounts[id] = 0;
         }
         if (!teamB) {
@@ -112,25 +108,22 @@ export const findOrCreateLobby = mutation({
             name: "Bravo",
             type: "bravo",
           });
-          teamB = {
-            _id: id,
-            gameId: gameIdToJoin,
-            name: "Bravo",
-            type: "bravo",
-          };
+          teamB = (await ctx.db.get(id)) ?? undefined;
           teamCounts[id] = 0;
         }
 
         // Assign to smaller team
-        if ((teamCounts[teamA._id] || 0) <= (teamCounts[teamB._id] || 0)) {
-          teamId = teamA._id;
-        } else {
-          teamId = teamB._id;
+        if (teamA && teamB) {
+          if ((teamCounts[teamA._id] || 0) <= (teamCounts[teamB._id] || 0)) {
+            teamId = teamA._id;
+          } else {
+            teamId = teamB._id;
+          }
         }
       } else {
         // "Duos" or "Squads" Logic
         // Find first team with space
-        let foundTeamId: string | null = null;
+        let foundTeamId: Id<"teams"> | undefined;
         for (const t of teams) {
           if ((teamCounts[t._id] || 0) < MAX_PER_TEAM) {
             foundTeamId = t._id;
@@ -255,7 +248,7 @@ export const checkGameStart = mutation({
           // 2. Create new teams if still needed (for Duos/Squads)
           while (botsCreated < slotsNeeded) {
             // Find or create a team that needs members
-            let targetTeamId: string | null = null;
+            let targetTeamId: Id<"teams"> | undefined;
 
             if (game.subMode === "teams") {
               // Should not happen if Alpha/Bravo exist and we filled them, unless they are full (100?)

@@ -57,7 +57,9 @@ async function eliminatePlayer(
 ) {
   const victim = await ctx.db.get(victimId);
   const conqueror = await ctx.db.get(conquerorId);
-  if (!(victim && conqueror)) return;
+  if (!(victim && conqueror)) {
+    return;
+  }
 
   // 1. Transfer Credits
   const loot = victim.credits;
@@ -131,7 +133,7 @@ interface Structure {
   height: number;
 }
 
-type Entity = {
+interface Entity {
   _id: Id<"entities">;
   gameId: Id<"games">;
   ownerId: Id<"players">;
@@ -156,9 +158,9 @@ type Entity = {
   pathProgress?: number; // 0.0-1.0 progress within current tile
   reservedFactoryId?: string; // Reserved workshop slot
   nextPathAttempt?: number;
-};
+}
 
-type Troop = {
+interface Troop {
   _id: Id<"troops">;
   gameId: Id<"games">;
   ownerId: Id<"players">;
@@ -166,24 +168,24 @@ type Troop = {
   targetPos?: { x: number; y: number };
   lastSpawnTime?: number;
   state: string;
-};
+}
 
-type Family = {
+interface Family {
   _id: Id<"families">;
   gameId: Id<"games">;
   homeId: string;
   ownerId: Id<"players">;
   lastSpawnTime?: number;
-};
+}
 
-type Player = {
+interface Player {
   _id: Id<"players">;
   gameId: Id<"games">;
   userId?: string;
   credits: number;
   isBot?: boolean;
   status?: string;
-};
+}
 
 /**
  * Finds a random position for a base with maximum distance from existing bases.
@@ -504,8 +506,13 @@ function handleWorking(
   blocked: Set<string>,
   houses?: Building[]
 ): boolean {
-  if (member.state !== "working" || !member.stateEnd || now <= member.stateEnd)
+  if (
+    member.state !== "working" ||
+    !member.stateEnd ||
+    now <= member.stateEnd
+  ) {
     return false;
+  }
 
   if (member.homeId && houses) {
     const home = houses.find((h) => h.id === member.homeId);
@@ -540,8 +547,13 @@ function handleWorking(
 }
 
 function handleSleeping(member: Entity, now: number): boolean {
-  if (member.state !== "sleeping" || !member.stateEnd || now <= member.stateEnd)
+  if (
+    member.state !== "sleeping" ||
+    !member.stateEnd ||
+    now <= member.stateEnd
+  ) {
     return false;
+  }
   member.state = "idle";
   member.stateEnd = now + 3000 + Math.random() * 3000;
   return true;
@@ -817,7 +829,9 @@ async function processActiveEntities(
   const deletedEntityIds = new Set<string>();
 
   for (const entity of activeEntities) {
-    if (deletedEntityIds.has(entity._id)) continue;
+    if (deletedEntityIds.has(entity._id)) {
+      continue;
+    }
 
     let dirty = false;
     const troop = entity.troopId
@@ -881,7 +895,7 @@ async function processActiveEntities(
           if (Math.random() < 0.8) {
             // High hit prob
             // Find target entity to damage
-            const targetEntity = entities.find((e) => e._id === target!.id);
+            const targetEntity = entities.find((e) => e._id === target?.id);
             if (targetEntity && !deletedEntityIds.has(targetEntity._id)) {
               targetEntity.health = (targetEntity.health || 1) - 1;
               // If dead, we handle cleanup later or immediately?
@@ -1003,7 +1017,9 @@ async function handleSpawning(
     }
 
     // Only spawn group if barracks is powered
-    if (!poweredBuildingIds.has(b.id)) continue;
+    if (!poweredBuildingIds.has(b.id)) {
+      continue;
+    }
 
     const troopId = await ctx.db.insert("troops", {
       gameId,
@@ -1031,9 +1047,13 @@ async function handleSpawning(
   }
 
   for (const h of houses) {
-    if (h.constructionEnd && now < h.constructionEnd) continue;
+    if (h.constructionEnd && now < h.constructionEnd) {
+      continue;
+    }
     // Only spawn family if house is powered
-    if (!poweredBuildingIds.has(h.id)) continue;
+    if (!poweredBuildingIds.has(h.id)) {
+      continue;
+    }
 
     if (!knownFamilies.has(h.id)) {
       await ctx.db.insert("families", {
@@ -1058,7 +1078,9 @@ async function handleSpawning(
 
   for (const fam of familiesUpdated) {
     // Check if home is powered
-    if (!poweredBuildingIds.has(fam.homeId)) continue;
+    if (!poweredBuildingIds.has(fam.homeId)) {
+      continue;
+    }
 
     const memberCount = entities.filter((e) => e.familyId === fam._id).length;
     // Only spawn if under capacity AND 30 seconds have passed
@@ -1086,7 +1108,9 @@ async function handleSpawning(
 
   for (const troop of troopsUpdated) {
     // Check if barracks is powered
-    if (!poweredBuildingIds.has(troop.barracksId)) continue;
+    if (!poweredBuildingIds.has(troop.barracksId)) {
+      continue;
+    }
 
     const commander = entities.find(
       (e) => e.troopId === troop._id && e.type === "commander"
@@ -1137,10 +1161,14 @@ export const placeBase = mutation({
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthorized");
+    if (!identity) {
+      throw new Error("Unauthorized");
+    }
 
     const game = await ctx.db.get(args.gameId);
-    if (!game) throw new Error("Game not found");
+    if (!game) {
+      throw new Error("Game not found");
+    }
 
     if (game.phase !== "placement") {
       throw new Error("Not in placement phase");
@@ -1156,14 +1184,18 @@ export const placeBase = mutation({
       )
       .first();
 
-    if (!player) throw new Error("Player not found in this game");
+    if (!player) {
+      throw new Error("Player not found in this game");
+    }
 
     const map = await ctx.db
       .query("maps")
       .withIndex("by_gameId", (q) => q.eq("gameId", args.gameId))
       .first();
 
-    if (!map) throw new Error("Map not generated");
+    if (!map) {
+      throw new Error("Map not generated");
+    }
 
     if (
       args.x < 0 ||
@@ -1226,17 +1258,23 @@ export const placeBuilding = mutation({
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthorized");
+    if (!identity) {
+      throw new Error("Unauthorized");
+    }
 
     const game = await ctx.db.get(args.gameId);
-    if (!game) throw new Error("Game not found");
+    if (!game) {
+      throw new Error("Game not found");
+    }
 
     if (game.phase !== "simulation") {
       throw new Error("Build mode only available in simulation phase");
     }
 
     const buildingSpec = BUILDINGS[args.buildingType];
-    if (!buildingSpec) throw new Error("Invalid building type");
+    if (!buildingSpec) {
+      throw new Error("Invalid building type");
+    }
 
     const player = await ctx.db
       .query("players")
@@ -1248,14 +1286,18 @@ export const placeBuilding = mutation({
       )
       .first();
 
-    if (!player) throw new Error("Player not found");
+    if (!player) {
+      throw new Error("Player not found");
+    }
 
     const map = await ctx.db
       .query("maps")
       .withIndex("by_gameId", (q) => q.eq("gameId", args.gameId))
       .first();
 
-    if (!map) throw new Error("Map not generated");
+    if (!map) {
+      throw new Error("Map not generated");
+    }
 
     const cost = calculateBuildingCost(
       buildingSpec.cost,
@@ -1473,8 +1515,9 @@ export const tick = internalMutation({
   args: { gameId: v.id("games") },
   handler: async (ctx, args) => {
     const game = await ctx.db.get(args.gameId);
-    if (!game || game.status !== "active" || game.phase !== "simulation")
+    if (!game || game.status !== "active" || game.phase !== "simulation") {
       return;
+    }
 
     const now = Date.now();
 
@@ -1527,7 +1570,9 @@ export const tick = internalMutation({
       .query("maps")
       .withIndex("by_gameId", (q) => q.eq("gameId", args.gameId))
       .first();
-    if (!mapDoc) return;
+    if (!mapDoc) {
+      return;
+    }
 
     const entities = (await ctx.db
       .query("entities")
@@ -1607,7 +1652,9 @@ export const tick = internalMutation({
       .collect()) as Troop[];
 
     const playerCredits: Record<string, number> = {};
-    for (const p of players) playerCredits[p._id] = 0;
+    for (const p of players) {
+      playerCredits[p._id] = 0;
+    }
 
     const blocked = createCollisionMap(
       mapDoc.width,
@@ -1688,57 +1735,115 @@ export const tick = internalMutation({
   },
 });
 
-export const deleteGame = mutation({
+export const deleteGameInternal = internalMutation({
   args: {
     gameId: v.id("games"),
   },
   handler: async (ctx, args) => {
     const game = await ctx.db.get(args.gameId);
-    if (!game) return;
+    if (!game) {
+      return;
+    }
 
     const players = await ctx.db
       .query("players")
       .filter((q) => q.eq(q.field("gameId"), args.gameId))
       .collect();
-    for (const p of players) await ctx.db.delete(p._id);
+    for (const p of players) {
+      await ctx.db.delete(p._id);
+    }
 
     const teams = await ctx.db
       .query("teams")
       .filter((q) => q.eq(q.field("gameId"), args.gameId))
       .collect();
-    for (const t of teams) await ctx.db.delete(t._id);
+    for (const t of teams) {
+      await ctx.db.delete(t._id);
+    }
 
     const maps = await ctx.db
       .query("maps")
       .withIndex("by_gameId", (q) => q.eq("gameId", args.gameId))
       .collect();
-    for (const m of maps) await ctx.db.delete(m._id);
+    for (const m of maps) {
+      await ctx.db.delete(m._id);
+    }
 
     const mapChunks = await ctx.db
       .query("chunks")
       .withIndex("by_game", (q) => q.eq("gameId", args.gameId))
       .collect();
-    for (const c of mapChunks) await ctx.db.delete(c._id);
+    for (const c of mapChunks) {
+      await ctx.db.delete(c._id);
+    }
 
     const entities = await ctx.db
       .query("entities")
       .withIndex("by_gameId", (q) => q.eq("gameId", args.gameId))
       .collect();
-    for (const e of entities) await ctx.db.delete(e._id);
+    for (const e of entities) {
+      await ctx.db.delete(e._id);
+    }
 
     const families = await ctx.db
       .query("families")
       .withIndex("by_gameId", (q) => q.eq("gameId", args.gameId))
       .collect();
-    for (const f of families) await ctx.db.delete(f._id);
+    for (const f of families) {
+      await ctx.db.delete(f._id);
+    }
 
     const troops = await ctx.db
       .query("troops")
       .withIndex("by_gameId", (q) => q.eq("gameId", args.gameId))
       .collect();
-    for (const t of troops) await ctx.db.delete(t._id);
+    for (const t of troops) {
+      await ctx.db.delete(t._id);
+    }
 
     await ctx.db.delete(game._id);
+  },
+});
+
+export const deleteGame = mutation({
+  args: {
+    gameId: v.id("games"),
+  },
+  handler: async (ctx, args) => {
+    // 1. Auth Check
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthorized");
+    }
+
+    // 2. Fetch Game
+    const game = await ctx.db.get(args.gameId);
+    if (!game) {
+      return; // Silent return if game already gone
+    }
+
+    // 3. Fetch Players
+    const players = await ctx.db
+      .query("players")
+      .filter((q) => q.eq(q.field("gameId"), args.gameId))
+      .collect();
+
+    // 4. Verify user is a player in this game
+    const isPlayer = players.some((p) => p.userId === identity.subject);
+    if (!isPlayer) {
+      throw new Error("You are not a player in this game");
+    }
+
+    // 5. Griefing Protection: Only allow deletion if user is the LAST player
+    // Note: If players.length is 1, it must be the current user (since isPlayer is true)
+    if (players.length > 1) {
+      throw new Error("Cannot delete game while other players are present");
+    }
+
+    // 6. Safe to delete
+    await ctx.runMutation(internal.game.deleteGameInternal, {
+      gameId: args.gameId,
+    });
   },
 });
 
@@ -1803,7 +1908,9 @@ export const getStaticMap = query({
       .query("maps")
       .withIndex("by_gameId", (q) => q.eq("gameId", args.gameId))
       .first();
-    if (!mapDoc) return null;
+    if (!mapDoc) {
+      return null;
+    }
 
     // Load all chunks - frontend will reassemble
     const chunks = await ctx.db
@@ -1831,10 +1938,14 @@ export const moveTroop = mutation({
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthorized");
+    if (!identity) {
+      throw new Error("Unauthorized");
+    }
 
     const troop = await ctx.db.get(args.troopId);
-    if (!troop) throw new Error("Troop not found");
+    if (!troop) {
+      throw new Error("Troop not found");
+    }
 
     // Check ownership
     const player = await ctx.db
@@ -1846,9 +1957,13 @@ export const moveTroop = mutation({
         )
       )
       .first();
-    if (!player) throw new Error("Player not found");
+    if (!player) {
+      throw new Error("Player not found");
+    }
 
-    if (troop.ownerId !== player._id) throw new Error("Not your troop");
+    if (troop.ownerId !== player._id) {
+      throw new Error("Not your troop");
+    }
 
     // Update Target
     await ctx.db.patch(troop._id, {

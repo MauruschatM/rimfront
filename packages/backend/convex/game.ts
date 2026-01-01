@@ -1845,19 +1845,30 @@ export const tick = internalMutation({
       }
     }
 
-    // Fetch Alliances
+    // Fetch Alliances & Handle Expiration
     const allianceDocs = await ctx.db
       .query("diplomacy")
       .withIndex("by_gameId", (q: any) => q.eq("gameId", args.gameId))
       .collect();
     const alliances = new Set<string>();
+    const expiredAllianceIds = new Set<string>();
+
     for (const d of allianceDocs) {
       if (d.status === "allied") {
+        if (d.expiresAt && now > d.expiresAt) {
+          expiredAllianceIds.add(d._id);
+          continue;
+        }
         // Store as sorted pair to easily check "a:b" or "b:a"
         const p1 = d.player1Id < d.player2Id ? d.player1Id : d.player2Id;
         const p2 = d.player1Id < d.player2Id ? d.player2Id : d.player1Id;
         alliances.add(`${p1}:${p2}`);
       }
+    }
+
+    // Delete expired alliances (silent break)
+    for (const id of expiredAllianceIds) {
+      await ctx.db.delete(id as any);
     }
 
     const playerBetrayalTimes: Record<string, number> = {};

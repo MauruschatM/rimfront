@@ -116,6 +116,53 @@ export const acceptAlliance = mutation({
     await ctx.db.patch(diplomacy._id, {
       status: "allied",
       updatedAt: Date.now(),
+      expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes
+    });
+  },
+});
+
+export const renewAlliance = mutation({
+  args: {
+    diplomacyId: v.id("diplomacy"),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthorized");
+
+    const diplomacy = await ctx.db.get(args.diplomacyId);
+    if (!diplomacy) throw new Error("Alliance not found");
+
+    if (diplomacy.status !== "allied") throw new Error("Not allied");
+
+    const player = await ctx.db
+      .query("players")
+      .filter((q) =>
+        q.and(
+          q.eq(q.field("gameId"), diplomacy.gameId),
+          q.eq(q.field("userId"), identity.subject)
+        )
+      )
+      .first();
+
+    if (!player) throw new Error("Player not found");
+    if (
+      player._id !== diplomacy.player1Id &&
+      player._id !== diplomacy.player2Id
+    ) {
+      throw new Error("Unauthorized");
+    }
+
+    const now = Date.now();
+    const timeLeft = (diplomacy.expiresAt || 0) - now;
+
+    // Allow renewal only in last 30 seconds
+    if (timeLeft > 30_000) {
+      throw new Error("Can only renew in the last 30 seconds");
+    }
+
+    await ctx.db.patch(diplomacy._id, {
+      expiresAt: now + 5 * 60 * 1000,
+      updatedAt: now,
     });
   },
 });

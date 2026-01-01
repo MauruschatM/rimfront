@@ -104,6 +104,7 @@ export default defineSchema({
     player2Id: v.id("players"),
     status: v.string(), // "pending", "allied"
     updatedAt: v.number(),
+    expiresAt: v.optional(v.number()),
   })
     .index("by_gameId", ["gameId"])
     .index("by_players", ["player1Id", "player2Id"])

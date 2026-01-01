@@ -422,79 +422,85 @@ export function GameCanvas({
   }, [entities, families, troops, buildings, alliances, myPlayerId]);
 
   return (
-    <Canvas
-      camera={{
-        zoom: 20,
-        position: [staticMap.width / 2, staticMap.height / 2, 100],
-      }}
-      className="cursor-crosshair"
-      gl={{ antialias: false }}
-      orthographic
-    >
-      <color args={["#000"]} attach="background" />
-      <ambientLight intensity={0.5} />
-      <directionalLight intensity={1} position={[10, 10, 10]} />
+    <React.Fragment>
+      <Canvas
+        camera={{
+          zoom: 20,
+          position: [staticMap.width / 2, staticMap.height / 2, 100],
+        }}
+        className="cursor-crosshair"
+        gl={{ antialias: false }}
+        orthographic
+      >
+        <color args={["#000"]} attach="background" />
+        <ambientLight intensity={0.5} />
+        <directionalLight intensity={1} position={[10, 10, 10]} />
 
-      <CameraManager
-        flyTo={flyTo}
-        isDraggingRef={isDraggingRef}
-        mapHeight={staticMap.height}
-        mapWidth={staticMap.width}
-      />
-
-      <MapRenderer map={staticMap} />
-      <StructuresRenderer map={staticMap} />
-
-      {isBuildMode && <EnergyRenderer validTiles={energyTiles} />}
-
-      <BuildingsRenderer buildings={visibleBuildings} stats={buildingStats} />
-
-      {entities && (
-        <LasersRenderer attackingUnits={attackingUnits} entityMap={entityMap} />
-      )}
-
-      {entities && (
-        <UnitsRenderer
-          commanders={commanderEntities}
-          entities={visibleEntities}
-          families={memberEntities}
+        <CameraManager
+          flyTo={flyTo}
           isDraggingRef={isDraggingRef}
-          onSelectTroop={onSelectTroop}
+          mapHeight={staticMap.height}
+          mapWidth={staticMap.width}
+        />
+
+        <MapRenderer map={staticMap} />
+        <StructuresRenderer map={staticMap} />
+
+        {isBuildMode && <EnergyRenderer validTiles={energyTiles} />}
+
+        <BuildingsRenderer buildings={visibleBuildings} stats={buildingStats} />
+
+        {entities && (
+          <LasersRenderer
+            attackingUnits={attackingUnits}
+            entityMap={entityMap}
+          />
+        )}
+
+        {entities && (
+          <UnitsRenderer
+            commanders={commanderEntities}
+            entities={visibleEntities}
+            families={memberEntities}
+            isDraggingRef={isDraggingRef}
+            onSelectTroop={onSelectTroop}
+            selectedTroopId={selectedTroopId}
+            soldiers={soldierEntities}
+            turretGuns={turretGunEntities}
+          />
+        )}
+
+        {entities && (
+          <IncomeIndicator workingEntities={workingEntityPositions} />
+        )}
+
+        <InteractionPlane
+          buildings={visibleBuildings}
+          energyTiles={energyTiles}
+          game={game}
+          height={staticMap.height}
+          isBuildMode={isBuildMode}
+          isDraggingRef={isDraggingRef}
+          onClick={handlePlace}
+          onMoveTroop={onMoveTroop}
+          selectedBuilding={selectedBuilding}
           selectedTroopId={selectedTroopId}
-          soldiers={soldierEntities}
-          turretGuns={turretGunEntities}
+          staticMap={staticMap}
+          width={staticMap.width}
+        />
+      </Canvas>
+      {diplomacyTargetId && myPlayerId && (
+        <DiplomacyModal
+          gameId={game._id}
+          isOpen={!!diplomacyTargetId}
+          myPlayerId={myPlayerId}
+          onClose={() => setDiplomacyTargetId(null)}
+          targetPlayerId={diplomacyTargetId}
         />
       )}
-
-      {entities && <IncomeIndicator workingEntities={workingEntityPositions} />}
-
-      <InteractionPlane
-        buildings={visibleBuildings}
-        energyTiles={energyTiles}
-        game={game}
-        height={staticMap.height}
-        isBuildMode={isBuildMode}
-        isDraggingRef={isDraggingRef}
-        onClick={handlePlace}
-        onMoveTroop={onMoveTroop}
-        selectedBuilding={selectedBuilding}
-        selectedTroopId={selectedTroopId}
-        staticMap={staticMap}
-        width={staticMap.width}
-      />
-    </Canvas>
-  diplomacyTargetId && myPlayerId && (
-    <DiplomacyModal
-      gameId={game._id}
-      isOpen={!!diplomacyTargetId}
-      myPlayerId={myPlayerId}
-      onClose={() => setDiplomacyTargetId(null)}
-      targetPlayerId={diplomacyTargetId}
-    />
+      {isConfused && (
+        <div className="pointer-events-none fixed inset-0 z-50 animate-pulse bg-red-500/10 mix-blend-multiply" />
+      )}
+    </React.Fragment>
   );
-  isConfused && (
-    <div className="pointer-events-none fixed inset-0 z-50 animate-pulse bg-red-500/10 mix-blend-multiply" />
-  );
-  </React.Fragment>
-  )
 }

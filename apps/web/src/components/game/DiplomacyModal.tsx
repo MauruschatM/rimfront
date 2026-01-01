@@ -50,6 +50,13 @@ export function DiplomacyModal({
   const acceptAlliance = useMutation(api.diplomacy.acceptAlliance);
   const rejectAlliance = useMutation(api.diplomacy.rejectAlliance);
   const breakAlliance = useMutation(api.diplomacy.breakAlliance);
+  const renewAlliance = useMutation(api.diplomacy.renewAlliance);
+
+  const [now, setNow] = React.useState(Date.now());
+  React.useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   if (!(players && alliances)) return null;
 
@@ -67,6 +74,8 @@ export function DiplomacyModal({
 
   const status = relationship?.status || "none";
   const isSender = relationship?.player1Id === myPlayerId;
+  const expiresAt = relationship?.expiresAt || 0;
+  const timeLeft = Math.max(0, expiresAt - now);
 
   const handleRequest = async () => {
     try {
@@ -75,6 +84,16 @@ export function DiplomacyModal({
         targetPlayerId: targetPlayerId as any,
       });
       toast.success("Alliance request sent");
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  };
+
+  const handleRenew = async () => {
+    if (!relationship) return;
+    try {
+      await renewAlliance({ diplomacyId: relationship._id });
+      toast.success("Alliance renewed!");
     } catch (e: any) {
       toast.error(e.message);
     }
@@ -155,6 +174,23 @@ export function DiplomacyModal({
                     <div className="text-center font-bold text-green-500">
                       Allied
                     </div>
+                    <div className="text-center font-mono text-muted-foreground text-sm">
+                      {Math.floor(timeLeft / 1000 / 60)}:
+                      {(Math.floor(timeLeft / 1000) % 60)
+                        .toString()
+                        .padStart(2, "0")}
+                    </div>
+
+                    {timeLeft <= 30_000 && (
+                      <Button
+                        className="w-full"
+                        onClick={handleRenew}
+                        variant="default"
+                      >
+                        Renew Alliance
+                      </Button>
+                    )}
+
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
                         <Button variant="destructive">Break Alliance</Button>

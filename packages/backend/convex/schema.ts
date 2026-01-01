@@ -59,8 +59,8 @@ export default defineSchema({
     name: v.string(),
     teamId: v.optional(v.id("teams")),
     hasPlacedBase: v.optional(v.boolean()),
-    credits: v.number(),
-    inflation: v.number(), // Current inflation multiplier (min 1.0, doubles on build, decays -0.1/round)
+    credits: v.optional(v.number()),
+    inflation: v.optional(v.number()), // Current inflation multiplier (min 1.0, doubles on build, decays -0.1/round)
     status: v.optional(v.string()), // "active", "eliminated", "spectator"
     eliminatedBy: v.optional(v.id("players")),
     lastBetrayalTime: v.optional(v.number()), // Time when alliance was broken by this player

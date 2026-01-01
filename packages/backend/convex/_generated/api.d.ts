@@ -9,11 +9,23 @@
  */
 
 import type * as auth from "../auth.js";
+import type * as diplomacy from "../diplomacy.js";
 import type * as game from "../game.js";
 import type * as healthCheck from "../healthCheck.js";
 import type * as http from "../http.js";
+import type * as lib_combat from "../lib/combat.js";
+import type * as lib_constants from "../lib/constants.js";
+import type * as lib_economy from "../lib/economy.js";
+import type * as lib_gameState from "../lib/gameState.js";
 import type * as lib_mapgen from "../lib/mapgen.js";
 import type * as lib_pathfinding from "../lib/pathfinding.js";
+import type * as lib_placement from "../lib/placement.js";
+import type * as lib_player from "../lib/player.js";
+import type * as lib_simulation from "../lib/simulation.js";
+import type * as lib_spatial from "../lib/spatial.js";
+import type * as lib_spawning from "../lib/spawning.js";
+import type * as lib_types from "../lib/types.js";
+import type * as lib_unitBehavior from "../lib/unitBehavior.js";
 import type * as matchmaking from "../matchmaking.js";
 import type * as privateData from "../privateData.js";
 
@@ -25,11 +37,23 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
+  diplomacy: typeof diplomacy;
   game: typeof game;
   healthCheck: typeof healthCheck;
   http: typeof http;
+  "lib/combat": typeof lib_combat;
+  "lib/constants": typeof lib_constants;
+  "lib/economy": typeof lib_economy;
+  "lib/gameState": typeof lib_gameState;
   "lib/mapgen": typeof lib_mapgen;
   "lib/pathfinding": typeof lib_pathfinding;
+  "lib/placement": typeof lib_placement;
+  "lib/player": typeof lib_player;
+  "lib/simulation": typeof lib_simulation;
+  "lib/spatial": typeof lib_spatial;
+  "lib/spawning": typeof lib_spawning;
+  "lib/types": typeof lib_types;
+  "lib/unitBehavior": typeof lib_unitBehavior;
   matchmaking: typeof matchmaking;
   privateData: typeof privateData;
 }>;

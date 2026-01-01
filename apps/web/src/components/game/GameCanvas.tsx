@@ -418,124 +418,26 @@ function getBuildingCapacity(type: string): number {
 
 function BuildingsRenderer({
   buildings,
-  entities,
-  families,
-  troops,
+  stats,
 }: {
   buildings: Building[];
-  entities?: Entity[];
-  families?: Array<{ _id: string; homeId: string; lastSpawnTime?: number }>;
-  troops?: Array<{ _id: string; barracksId: string; lastSpawnTime?: number }>;
+  stats: Record<
+    string,
+    {
+      active: number;
+      working: number;
+      sleeping: number;
+      total: number;
+      lastSpawnTime?: number;
+    }
+  >;
 }) {
-  // Count per-building stats
-  const buildingStats = useMemo(() => {
-    const stats: Record<
-      string,
-      {
-        active: number;
-        working: number;
-        sleeping: number;
-        total: number;
-        lastSpawnTime?: number;
-      }
-    > = {};
-
-    if (entities) {
-      for (const entity of entities) {
-        // Count active (not inside) entities by home/workplace
-        if (entity.homeId && !entity.isInside) {
-          if (!stats[entity.homeId]) {
-            stats[entity.homeId] = {
-              active: 0,
-              working: 0,
-              sleeping: 0,
-              total: 0,
-            };
-          }
-          stats[entity.homeId].active++;
-          stats[entity.homeId].total++;
-        }
-        // Count soldiers towards barracks
-        if (entity.troopId && !entity.isInside) {
-          const troop = troops?.find((t) => t._id === entity.troopId);
-          if (troop) {
-            if (!stats[troop.barracksId]) {
-              stats[troop.barracksId] = {
-                active: 0,
-                working: 0,
-                sleeping: 0,
-                total: 0,
-              };
-            }
-            stats[troop.barracksId].active++;
-            stats[troop.barracksId].total++;
-          }
-        }
-        if (entity.workplaceId) {
-          if (!stats[entity.workplaceId]) {
-            stats[entity.workplaceId] = {
-              active: 0,
-              working: 0,
-              sleeping: 0,
-              total: 0,
-            };
-          }
-          if (entity.state === "working") {
-            stats[entity.workplaceId].working++;
-          }
-        }
-        // Count sleeping entities by home
-        if (entity.homeId && entity.state === "sleeping") {
-          if (!stats[entity.homeId]) {
-            stats[entity.homeId] = {
-              active: 0,
-              working: 0,
-              sleeping: 0,
-              total: 0,
-            };
-          }
-          stats[entity.homeId].sleeping++;
-        }
-      }
-    }
-
-    // Add spawn time from families/troops
-    if (families) {
-      for (const family of families) {
-        if (!stats[family.homeId]) {
-          stats[family.homeId] = {
-            active: 0,
-            working: 0,
-            sleeping: 0,
-            total: 0,
-          };
-        }
-        stats[family.homeId].lastSpawnTime = family.lastSpawnTime;
-      }
-    }
-    if (troops) {
-      for (const troop of troops) {
-        if (!stats[troop.barracksId]) {
-          stats[troop.barracksId] = {
-            active: 0,
-            working: 0,
-            sleeping: 0,
-            total: 0,
-          };
-        }
-        stats[troop.barracksId].lastSpawnTime = troop.lastSpawnTime;
-      }
-    }
-
-    return stats;
-  }, [entities, families, troops]);
-
   return (
     <group>
       {buildings.map((b) => {
         const isUnderConstruction =
           b.constructionEnd && b.constructionEnd > Date.now();
-        const stat = buildingStats[b.id] || {
+        const stat = stats[b.id] || {
           active: 0,
           working: 0,
           sleeping: 0,
@@ -673,23 +575,13 @@ function BuildingsRenderer({
   );
 }
 
-function LasersRenderer({ entities }: { entities: Entity[] }) {
-  // ⚡ Bolt Optimization: Combine Map creation and filtering into one pass O(N)
-  // instead of O(N*K) lookup
-  const { entityMap, attackingUnits } = useMemo(() => {
-    const map = new Map<string, Entity>();
-    const attacking: Entity[] = [];
-    const now = Date.now();
-
-    for (const e of entities) {
-      map.set(e._id, e);
-      if (e.attackTargetId && e.attackEndTime && e.attackEndTime > now) {
-        attacking.push(e);
-      }
-    }
-    return { entityMap: map, attackingUnits: attacking };
-  }, [entities]);
-
+function LasersRenderer({
+  entityMap,
+  attackingUnits,
+}: {
+  entityMap: Map<string, Entity>;
+  attackingUnits: Entity[];
+}) {
   // We need to re-render every frame to update lasers or handle animations
   // But strictly `Line` is reactive.
   // However, target positions might move.
@@ -746,11 +638,17 @@ function LasersRenderer({ entities }: { entities: Entity[] }) {
 
 function UnitsRenderer({
   entities,
+  families,
+  commanders,
+  soldiers,
   selectedTroopId,
   onSelectTroop,
   isDraggingRef,
 }: {
   entities: Entity[];
+  families: Entity[];
+  commanders: Entity[];
+  soldiers: Entity[];
   selectedTroopId?: string | null;
   onSelectTroop?: (id: string | null) => void;
   isDraggingRef?: React.MutableRefObject<boolean>;
@@ -760,24 +658,6 @@ function UnitsRenderer({
   const soldiersRef = useRef<THREE.InstancedMesh>(null);
 
   const interpolation = useInterpolatedUnits(entities);
-
-  const { families, commanders, soldiers } = useMemo(() => {
-    const families: Entity[] = [];
-    const commanders: Entity[] = [];
-    const soldiers: Entity[] = [];
-
-    const activeEntities = (entities || []).filter((e) => !e.isInside);
-    for (const entity of activeEntities) {
-      if (entity.type === "member") {
-        families.push(entity);
-      } else if (entity.type === "commander") {
-        commanders.push(entity);
-      } else if (entity.type === "soldier") {
-        soldiers.push(entity);
-      }
-    }
-    return { families, commanders, soldiers };
-  }, [entities]);
 
   // Interpolation Frame Loop
   useFrame((state) => {
@@ -942,17 +822,39 @@ function UnitsRenderer({
 }
 
 // Floating income indicator for working residents
-function IncomeIndicator({ entities }: { entities: Entity[] }) {
+function IncomeIndicator({
+  workingEntities,
+}: {
+  workingEntities: Array<{ id: string; x: number; y: number }>;
+}) {
   const [indicators, setIndicators] = useState<
     Array<{ id: string; x: number; y: number; startTime: number }>
   >([]);
 
   useEffect(() => {
-    const newIndicators = getNewIncomeIndicators(entities);
+    const now = Date.now();
+    const newIndicators: Array<{
+      id: string;
+      x: number;
+      y: number;
+      startTime: number;
+    }> = [];
+
+    for (const worker of workingEntities) {
+      if (Math.random() < 0.3) {
+        newIndicators.push({
+          id: `${worker.id}-${now}`,
+          x: worker.x,
+          y: worker.y,
+          startTime: now,
+        });
+      }
+    }
+
     if (newIndicators.length > 0) {
       setIndicators((prev) => [...prev.slice(-10), ...newIndicators]);
     }
-  }, [entities]);
+  }, [workingEntities]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -1007,41 +909,6 @@ function EnergyRenderer({ validTiles }: { validTiles: Set<string> }) {
       <meshBasicMaterial color="#4ade80" opacity={0.3} transparent />
     </instancedMesh>
   );
-}
-
-function getNewIncomeIndicators(entities: Entity[]) {
-  const currentWorkers = new Set<string>();
-  const workerPositions: Record<string, { x: number; y: number }> = {};
-
-  if (entities) {
-    for (const entity of entities) {
-      if (entity.state === "working" && entity.workplaceId) {
-        currentWorkers.add(entity._id);
-        workerPositions[entity._id] = { x: entity.x, y: entity.y };
-      }
-    }
-  }
-
-  const now = Date.now();
-  const newIndicators: Array<{
-    id: string;
-    x: number;
-    y: number;
-    startTime: number;
-  }> = [];
-
-  for (const workerId of Array.from(currentWorkers)) {
-    const pos = workerPositions[workerId];
-    if (pos && Math.random() < 0.3) {
-      newIndicators.push({
-        id: `${workerId}-${now}`,
-        x: pos.x,
-        y: pos.y,
-        startTime: now,
-      });
-    }
-  }
-  return newIndicators;
 }
 
 // Single floating +1k text
@@ -1457,6 +1324,155 @@ export function GameCanvas({
     );
   }, [buildings, isBuildMode, myPlayerId, staticMap]);
 
+  // ⚡ Bolt Optimization: Consolidate entity processing into one pass (O(N))
+  // instead of multiple components iterating entities separately (O(K*N))
+  const {
+    buildingStats,
+    entityMap,
+    attackingUnits,
+    memberEntities,
+    commanderEntities,
+    soldierEntities,
+    workingEntityPositions,
+  } = useMemo(() => {
+    const stats: Record<
+      string,
+      {
+        active: number;
+        working: number;
+        sleeping: number;
+        total: number;
+        lastSpawnTime?: number;
+      }
+    > = {};
+    const map = new Map<string, Entity>();
+    const attacking: Entity[] = [];
+    const members: Entity[] = [];
+    const commanders: Entity[] = [];
+    const soldiers: Entity[] = [];
+    const workers: Array<{ id: string; x: number; y: number }> = [];
+
+    const now = Date.now();
+
+    if (entities) {
+      for (const entity of entities) {
+        // 1. Map for Lasers/Lookups
+        map.set(entity._id, entity);
+
+        // 2. Attacking Units for Lasers
+        if (
+          entity.attackTargetId &&
+          entity.attackEndTime &&
+          entity.attackEndTime > now
+        ) {
+          attacking.push(entity);
+        }
+
+        // 3. Unit Categories for Renderer
+        // Only active entities (not inside) are rendered usually, but UnitRenderer filters !isInside itself.
+        // Wait, UnitRenderer: "const activeEntities = (entities || []).filter((e) => !e.isInside);"
+        // So we should filter here?
+        // Yes, let's filter here for rendering lists.
+        if (!entity.isInside) {
+          if (entity.type === "member") members.push(entity);
+          else if (entity.type === "commander") commanders.push(entity);
+          else if (entity.type === "soldier") soldiers.push(entity);
+        }
+
+        // 4. Working Entities for IncomeIndicator
+        if (entity.state === "working" && entity.workplaceId) {
+          workers.push({ id: entity._id, x: entity.x, y: entity.y });
+        }
+
+        // 5. Building Stats
+        // Logic from BuildingsRenderer
+        if (entity.homeId && !entity.isInside) {
+          if (!stats[entity.homeId])
+            stats[entity.homeId] = {
+              active: 0,
+              working: 0,
+              sleeping: 0,
+              total: 0,
+            };
+          stats[entity.homeId].active++;
+          stats[entity.homeId].total++;
+        }
+        if (entity.troopId && !entity.isInside) {
+          const troop = troops?.find((t) => t._id === entity.troopId);
+          if (troop) {
+            if (!stats[troop.barracksId])
+              stats[troop.barracksId] = {
+                active: 0,
+                working: 0,
+                sleeping: 0,
+                total: 0,
+              };
+            stats[troop.barracksId].active++;
+            stats[troop.barracksId].total++;
+          }
+        }
+        if (entity.workplaceId) {
+          if (!stats[entity.workplaceId])
+            stats[entity.workplaceId] = {
+              active: 0,
+              working: 0,
+              sleeping: 0,
+              total: 0,
+            };
+          if (entity.state === "working") {
+            stats[entity.workplaceId].working++;
+          }
+        }
+        if (entity.homeId && entity.state === "sleeping") {
+          if (!stats[entity.homeId])
+            stats[entity.homeId] = {
+              active: 0,
+              working: 0,
+              sleeping: 0,
+              total: 0,
+            };
+          stats[entity.homeId].sleeping++;
+        }
+      }
+    }
+
+    // Merge spawn times (O(M) where M is small)
+    if (families) {
+      for (const family of families) {
+        if (!stats[family.homeId])
+          stats[family.homeId] = {
+            active: 0,
+            working: 0,
+            sleeping: 0,
+            total: 0,
+          };
+        stats[family.homeId].lastSpawnTime = family.lastSpawnTime;
+      }
+    }
+    if (troops) {
+      for (const troop of troops) {
+        if (!stats[troop.barracksId])
+          stats[troop.barracksId] = {
+            active: 0,
+            working: 0,
+            sleeping: 0,
+            total: 0,
+          };
+        stats[troop.barracksId].lastSpawnTime = troop.lastSpawnTime;
+      }
+    }
+
+    return {
+      buildingStats: stats,
+      entityMap: map,
+      attackingUnits: attacking,
+      memberEntities: members,
+      commanderEntities: commanders,
+      soldierEntities: soldiers,
+      workingEntityPositions: workers,
+    };
+  }, [entities, families, troops]);
+
   return (
     <Canvas
       camera={{
@@ -1484,26 +1500,26 @@ export function GameCanvas({
       {/* Render Energy Field ONLY in Build Mode */}
       {isBuildMode && <EnergyRenderer validTiles={energyTiles} />}
 
-      <BuildingsRenderer
-        buildings={buildings}
-        entities={entities}
-        families={families}
-        troops={troops}
-      />
+      <BuildingsRenderer buildings={buildings} stats={buildingStats} />
 
-      {entities && <LasersRenderer entities={entities} />}
+      {entities && (
+        <LasersRenderer attackingUnits={attackingUnits} entityMap={entityMap} />
+      )}
 
       {entities && (
         <UnitsRenderer
+          commanders={commanderEntities}
           entities={entities}
+          families={memberEntities}
           isDraggingRef={isDraggingRef}
           onSelectTroop={onSelectTroop}
           selectedTroopId={selectedTroopId}
+          soldiers={soldierEntities}
         />
       )}
 
       {/* Floating income indicators */}
-      {entities && <IncomeIndicator entities={entities} />}
+      {entities && <IncomeIndicator workingEntities={workingEntityPositions} />}
 
       <InteractionPlane
         buildings={buildings}

@@ -152,7 +152,9 @@ export const checkGameStart = mutation({
   },
   handler: async (ctx, args) => {
     const game = await ctx.db.get(args.gameId);
-    if (!game || game.status !== "waiting") return;
+    if (!game || game.status !== "waiting") {
+      return;
+    }
 
     // Check conditions
     const players = await ctx.db
@@ -343,7 +345,9 @@ export const leaveLobby = mutation({
   },
   handler: async (ctx, args) => {
     const player = await ctx.db.get(args.playerId);
-    if (!player) return;
+    if (!player) {
+      return;
+    }
 
     if (player.gameId !== args.gameId) {
       throw new Error("Player is not in this game");
@@ -365,7 +369,9 @@ export const leaveLobby = mutation({
 
     if (remainingPlayers.length === 0) {
       // Delete the game if no players left
-      await ctx.runMutation(api.game.deleteGame, { gameId: args.gameId });
+      await ctx.runMutation(internal.game.deleteGameInternal, {
+        gameId: args.gameId,
+      });
     }
 
     return { success: true };

@@ -85,6 +85,7 @@ export function LasersRenderer({
 
 export function UnitsRenderer({
   entities,
+  entityMap,
   families,
   commanders,
   soldiers,
@@ -94,6 +95,7 @@ export function UnitsRenderer({
   isDraggingRef,
 }: {
   entities: Entity[];
+  entityMap?: Map<string, Entity>;
   families: Entity[];
   commanders: Entity[];
   soldiers: Entity[];
@@ -107,7 +109,7 @@ export function UnitsRenderer({
   const soldiersRef = useRef<THREE.InstancedMesh>(null);
   const turretGunsRef = useRef<THREE.InstancedMesh>(null);
 
-  const interpolation = useInterpolatedUnits(entities);
+  const interpolation = useInterpolatedUnits(entities, entityMap);
 
   useFrame((state) => {
     const updateMesh = (mesh: THREE.InstancedMesh | null, list: Entity[]) => {
@@ -136,7 +138,10 @@ export function UnitsRenderer({
         }
 
         if (entity.type === "turret_gun" && entity.attackTargetId) {
-          const target = entities.find((e) => e._id === entity.attackTargetId);
+          const target = entityMap
+            ? entityMap.get(entity.attackTargetId)
+            : entities.find((e) => e._id === entity.attackTargetId);
+
           if (target) {
             const tPos = interpolation.getInterpolatedPosition(
               target._id,

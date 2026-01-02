@@ -467,6 +467,7 @@ export function GameCanvas({
           <UnitsRenderer
             commanders={commanderEntities}
             entities={visibleEntities}
+            entityMap={entityMap}
             families={memberEntities}
             isDraggingRef={isDraggingRef}
             onSelectTroop={onSelectTroop}

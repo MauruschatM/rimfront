@@ -16,7 +16,10 @@ interface Building {
   height: number;
 }
 
-export function useInterpolatedUnits(entities: Entity[] = []) {
+export function useInterpolatedUnits(
+  entities: Entity[] = [],
+  entityMap?: Map<string, Entity>
+) {
   const prevEntitiesRef = useRef<
     Record<string, { x: number; y: number; time: number }>
   >({});
@@ -38,14 +41,23 @@ export function useInterpolatedUnits(entities: Entity[] = []) {
       }
     });
 
-    const currentIds = new Set(entities.map((e) => e._id));
-    for (const id in prevEntitiesRef.current) {
-      if (!currentIds.has(id)) {
-        delete prevEntitiesRef.current[id];
-        delete interpolatedRef.current[id];
+    if (entityMap) {
+      for (const id in prevEntitiesRef.current) {
+        if (!entityMap.has(id)) {
+          delete prevEntitiesRef.current[id];
+          delete interpolatedRef.current[id];
+        }
+      }
+    } else {
+      const currentIds = new Set(entities.map((e) => e._id));
+      for (const id in prevEntitiesRef.current) {
+        if (!currentIds.has(id)) {
+          delete prevEntitiesRef.current[id];
+          delete interpolatedRef.current[id];
+        }
       }
     }
-  }, [entities]);
+  }, [entities, entityMap]);
 
   return {
     getInterpolatedPosition: (id: string, targetX: number, targetY: number) => {

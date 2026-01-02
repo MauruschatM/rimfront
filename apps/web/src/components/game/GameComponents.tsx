@@ -19,14 +19,14 @@ export function LobbyScreen({ game, players }: LobbyScreenProps) {
       const minutes = Math.ceil(seconds / 60);
       return { value: minutes, unit: "MIN" };
     }
-    return { value: seconds, unit: "SEK" };
+    return { value: seconds, unit: "SEC" };
   };
 
   return (
     <div className="flex h-screen w-full items-center justify-center bg-black text-white">
       <div className="pixel-corners flex min-w-[350px] flex-col items-center border-2 border-primary bg-background/50 p-8">
         <h2 className="mb-6 font-sans text-2xl text-primary">
-          WARTE AUF SPIELSTART
+          WAITING FOR GAME START
         </h2>
 
         {/* Timer */}
@@ -46,7 +46,7 @@ export function LobbyScreen({ game, players }: LobbyScreenProps) {
             <Users className="h-5 w-5 text-muted-foreground" />
             <span className="font-mono text-xl">
               {playerCount}
-              <span className="text-muted-foreground">/16 Spieler</span>
+              <span className="text-muted-foreground">/16 PLAYERS</span>
             </span>
           </div>
           <div className="h-3 w-full overflow-hidden rounded-full bg-muted">
@@ -58,9 +58,9 @@ export function LobbyScreen({ game, players }: LobbyScreenProps) {
         </div>
 
         <p className="text-center font-mono text-muted-foreground text-xs">
-          Spiel startet automatisch wenn voll
+          Game starts automatically when full
           <br />
-          oder nach Ablauf des Timers
+          or when timer ends
         </p>
       </div>
     </div>
@@ -89,7 +89,7 @@ export function GameHUD({
       const minutes = Math.ceil(seconds / 60);
       return { value: minutes, unit: "MIN" };
     }
-    return { value: seconds, unit: "SEK" };
+    return { value: seconds, unit: "SEC" };
   };
 
   return (
@@ -145,7 +145,7 @@ export function GameHUD({
             {timeLeft > 0 ? formatGameTime(timeLeft).value : "00"}
           </div>
           <div className="text-center font-mono text-muted-foreground text-xs">
-            {timeLeft > 0 ? formatGameTime(timeLeft).unit : "SEK"}
+            {timeLeft > 0 ? formatGameTime(timeLeft).unit : "SEC"}
           </div>
         </div>
       </div>

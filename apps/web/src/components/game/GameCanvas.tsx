@@ -58,7 +58,7 @@ interface Building {
 
 interface Player {
   _id: string;
-  credits: number;
+  credits?: number;
   userId?: string;
   name?: string;
   teamId?: string;

@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { authComponent } from "./auth";
 import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { type MutationCtx, mutation, query } from "./_generated/server";
@@ -146,16 +147,24 @@ export const findOrCreateLobby = mutation({
   },
   handler: async (ctx, args) => {
     const cleanName = args.playerName.trim();
+    // Sentinel Security: Basic input sanitization and length check
+    if (!/^[a-zA-Z0-9 _-]+$/.test(cleanName)) {
+      throw new Error("Player name contains invalid characters");
+    }
     if (cleanName.length < 2 || cleanName.length > 20) {
       throw new Error("Player name must be between 2 and 20 characters");
     }
 
+    // Sentinel Security: Prefer authenticated user ID
+    const user = await authComponent.safeGetAuthUser(ctx);
+    const userId = user ? user._id : args.userId;
+
     // Security: One active game per user (Rate Limiting / Anti-Spam)
-    if (args.userId) {
+    if (userId) {
       // Check only the most recent player records to avoid N+1 on full history
       const existingPlayers = await ctx.db
         .query("players")
-        .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+        .withIndex("by_userId", (q) => q.eq("userId", userId))
         .order("desc") // Most recent first (by Creation ID)
         .take(10);
 
@@ -183,7 +192,7 @@ export const findOrCreateLobby = mutation({
 
     const playerId = await ctx.db.insert("players", {
       gameId,
-      userId: args.userId,
+      userId: userId,
       isBot: false,
       name: cleanName,
       teamId,

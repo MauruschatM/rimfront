@@ -33,8 +33,8 @@ async function findSuitableGame(
 
   const newGameId = await ctx.db.insert("games", {
     status: "waiting",
-    type: type,
-    subMode: subMode,
+    type,
+    subMode,
     createdAt: Date.now(),
   });
 
@@ -93,8 +93,7 @@ async function assignToSquadsMode(
   }
 
   const teamNumber = teams.length + 1;
-  const name =
-    subMode === "duos" ? `Duo ${teamNumber}` : `Squad ${teamNumber}`;
+  const name = subMode === "duos" ? `Duo ${teamNumber}` : `Squad ${teamNumber}`;
 
   return await ctx.db.insert("teams", {
     gameId,
@@ -183,7 +182,7 @@ export const findOrCreateLobby = mutation({
     const teamId = await assignPlayerToTeam(ctx, gameId, args.subMode);
 
     const playerId = await ctx.db.insert("players", {
-      gameId: gameId,
+      gameId,
       userId: args.userId,
       isBot: false,
       name: cleanName,
@@ -194,15 +193,15 @@ export const findOrCreateLobby = mutation({
 
     if (isNewGame) {
       await ctx.scheduler.runAfter(60_000, api.matchmaking.checkGameStart, {
-        gameId: gameId,
+        gameId,
       });
     }
 
     await ctx.scheduler.runAfter(0, api.matchmaking.checkGameStart, {
-      gameId: gameId,
+      gameId,
     });
 
-    return { gameId: gameId, playerId };
+    return { gameId, playerId };
   },
 });
 
@@ -362,7 +361,7 @@ async function initializeGameMap(ctx: MutationCtx, gameId: Id<"games">) {
   const { tiles, structures } = generateMap(planetType, 256, 256);
 
   await ctx.db.insert("maps", {
-    gameId: gameId,
+    gameId,
     width: 256,
     height: 256,
     structures,
@@ -385,7 +384,7 @@ async function initializeGameMap(ctx: MutationCtx, gameId: Id<"games">) {
         }
       }
       await ctx.db.insert("chunks", {
-        gameId: gameId,
+        gameId,
         chunkX,
         chunkY,
         tiles: chunkTiles,

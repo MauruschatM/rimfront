@@ -1,7 +1,7 @@
 "use client";
 
 import { api } from "@packages/backend/convex/_generated/api";
-import type { Doc, Id } from "@packages/backend/convex/_generated/dataModel";
+import type { Id } from "@packages/backend/convex/_generated/dataModel";
 import { useMutation, useQuery } from "convex/react";
 import { Crosshair, Hammer, Loader2, Shield } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
@@ -177,8 +177,7 @@ export default function GamePage() {
     } else if (mode === "defense" && selectedTroopId) {
       // Check if clicking on enemy building
       const clickedBuilding = (buildings as Building[]).find(
-        (b) =>
-          x >= b.x && x < b.x + b.width && y >= b.y && y < b.y + b.height
+        (b) => x >= b.x && x < b.x + b.width && y >= b.y && y < b.y + b.height
       );
       if (clickedBuilding && clickedBuilding.ownerId !== myPlayer?._id) {
         handleAttackBuilding(clickedBuilding.id);
@@ -479,9 +478,10 @@ export default function GamePage() {
       {game.status === "ended" && myPlayer && (
         <VictoryDefeatOverlay
           calculateScore={calculateScore}
-          isWinner={myScore === Math.max(
-            ...players.map((p) => calculateScore(p as Player))
-          )}
+          isWinner={
+            myScore ===
+            Math.max(...players.map((p) => calculateScore(p as Player)))
+          }
           myPlayerId={myPlayer._id}
           onComplete={handleEndGame}
           players={players as Player[]}

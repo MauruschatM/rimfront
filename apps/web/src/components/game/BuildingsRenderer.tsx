@@ -1,4 +1,5 @@
 import { Text } from "@react-three/drei";
+import { useEffect, useState } from "react";
 
 interface Building {
   id: string;
@@ -65,10 +66,20 @@ export function BuildingsRenderer({
       working: number;
       sleeping: number;
       total: number;
+      assigned?: number;
       lastSpawnTime?: number;
     }
   >;
 }) {
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTick((t) => t + 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   return (
     <group>
       {buildings.map((b) => {
@@ -79,6 +90,7 @@ export function BuildingsRenderer({
           working: 0,
           sleeping: 0,
           total: 0,
+          assigned: 0,
         };
         const capacity = getBuildingCapacity(b.type);
         const icon = getBuildingIcon(b.type);
@@ -88,7 +100,9 @@ export function BuildingsRenderer({
         const lastSpawn = stat.lastSpawnTime || 0;
         const nextSpawnAt = lastSpawn + SPAWN_INTERVAL_MS;
         const timeToSpawn = Math.max(0, Math.ceil((nextSpawnAt - now) / 1000));
-        const showSpawnTimer = b.type === "house" || b.type === "barracks";
+        const showSpawnTimer =
+          (b.type === "house" || b.type === "barracks") &&
+          stat.total < capacity;
 
         // Building center position
         const centerX = b.x + b.width / 2 - 0.5;
@@ -141,21 +155,29 @@ export function BuildingsRenderer({
                   {icon}
                 </Text>
 
-                {/* Active/Max count (top-right of icon) */}
+                {/* Top-Right Info (Total/Capacity or Assigned/Capacity) */}
                 {capacity > 0 && (
                   <Text
                     anchorX="left"
                     anchorY="bottom"
-                    color={stat.active > 0 ? "#4ade80" : "#ef4444"}
+                    color={
+                      (b.type === "workshop"
+                        ? stat.assigned || 0
+                        : stat.total) >= capacity
+                        ? "#ef4444"
+                        : "#4ade80"
+                    }
                     fontSize={0.8}
                     position={[centerX + 1.3, centerY + 0.8, 2.7]}
                   >
-                    {stat.active}/{capacity}
+                    {b.type === "workshop"
+                      ? `${stat.assigned || 0}/${capacity}`
+                      : `${stat.total}/${capacity}`}
                   </Text>
                 )}
 
-                {/* Spawn timer (bottom-right of icon) */}
-                {showSpawnTimer && stat.total < capacity && (
+                {/* Bottom-Right: Spawn Timer */}
+                {showSpawnTimer && (
                   <Text
                     anchorX="left"
                     anchorY="top"
@@ -167,16 +189,24 @@ export function BuildingsRenderer({
                   </Text>
                 )}
 
-                {/* Working/Sleeping count (bottom-left of icon) */}
-                {(stat.working > 0 || stat.sleeping > 0) && (
+                {/* Bottom-Left: Inside Count */}
+                {(b.type === "house" || b.type === "workshop") && (
                   <Text
                     anchorX="right"
                     anchorY="top"
-                    color={stat.working > 0 ? "#fbbf24" : "#60a5fa"}
+                    color={
+                      (
+                        b.type === "workshop"
+                          ? stat.working > 0
+                          : stat.sleeping > 0
+                      )
+                        ? "#fbbf24"
+                        : "#60a5fa"
+                    }
                     fontSize={0.6}
                     position={[centerX - 1.3, centerY - 0.8, 2.7]}
                   >
-                    {stat.working > 0
+                    {b.type === "workshop"
                       ? `⚙${stat.working}`
                       : `💤${stat.sleeping}`}
                   </Text>

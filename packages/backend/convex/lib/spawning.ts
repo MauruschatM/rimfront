@@ -45,17 +45,6 @@ export async function handleSpawning(
       },
       lastSpawnTime: now, // Initialize spawn timer
     });
-
-    await ctx.db.insert("entities", {
-      gameId,
-      ownerId: b.ownerId,
-      troopId,
-      type: "commander",
-      state: "idle",
-      x: b.x + 1,
-      y: b.y + b.height, // Spawn outside the front
-      isInside: false,
-    });
     knownTroops.add(b.id);
   }
 
@@ -137,23 +126,40 @@ export async function handleSpawning(
       continue;
     }
 
-    const commander = entities.find(
-      (e) => e.troopId === troop._id && e.type === "commander"
-    );
+    const troopEntities = entities.filter((e) => e.troopId === troop._id);
+    const commander = troopEntities.find((e) => e.type === "commander");
+    const barracksObj = barracks.find((b) => b.id === troop.barracksId);
+
+    // If no commander and no troops (empty squad), spawn Commander
+    if (!commander && troopEntities.length === 0) {
+      const lastSpawn = troop.lastSpawnTime || 0;
+      if (now > lastSpawn + SPAWN_INTERVAL_MS && barracksObj) {
+        const newCommander = {
+          gameId,
+          ownerId: troop.ownerId,
+          troopId: troop._id,
+          type: "commander",
+          state: "idle",
+          x: barracksObj.x + 1,
+          y: barracksObj.y + barracksObj.height,
+          isInside: false,
+        };
+        await ctx.db.insert("entities", newCommander);
+        entities.push(newCommander as any);
+        await ctx.db.patch(troop._id, { lastSpawnTime: now });
+      }
+      continue;
+    }
 
     // Only spawn soldiers if under capacity AND 30 seconds have passed
     // Limit total troop members (soldiers + commander) to 4
-    if (
-      commander &&
-      entities.filter((e) => e.troopId === troop._id).length < 4
-    ) {
+    if (commander && troopEntities.length < 4) {
       const lastSpawn = troop.lastSpawnTime || 0;
       if (now > lastSpawn + SPAWN_INTERVAL_MS) {
         const offset = {
           x: (Math.random() - 0.5) * 1,
           y: Math.random() * 1,
         };
-        const barracksObj = barracks.find((b) => b.id === troop.barracksId);
         const spawnX = barracksObj ? barracksObj.x + 1 : commander.x;
         const spawnY = barracksObj
           ? barracksObj.y + barracksObj.height

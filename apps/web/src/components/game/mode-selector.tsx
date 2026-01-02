@@ -96,7 +96,9 @@ export function ModeSelector({ user }: ModeSelectorProps) {
   };
 
   const handleLeave = async () => {
-    if (!(gameId && playerId)) return;
+    if (!(gameId && playerId)) {
+      return;
+    }
 
     try {
       await leaveLobby({ gameId, playerId });
@@ -109,7 +111,9 @@ export function ModeSelector({ user }: ModeSelectorProps) {
   };
 
   const handleForceStart = async () => {
-    if (!(gameId && playerId)) return;
+    if (!(gameId && playerId)) {
+      return;
+    }
 
     try {
       await forceStartLobby({ gameId, playerId });
@@ -124,7 +128,7 @@ export function ModeSelector({ user }: ModeSelectorProps) {
       const minutes = Math.ceil(seconds / 60);
       return { value: minutes, unit: "MIN" };
     }
-    return { value: seconds, unit: "SEK" };
+    return { value: seconds, unit: "SEC" };
   };
 
   const timeDisplay = formatTime(displayTimeLeft);
@@ -263,7 +267,7 @@ export function ModeSelector({ user }: ModeSelectorProps) {
 
       {/* Lobby Status Overlay with Timer */}
       {status === "joined" && (
-        <div className="pixel-corners zoom-in-95 absolute top-24 min-w-[300px] animate-in border-2 border-primary bg-background/90 p-6 text-center">
+        <output className="pixel-corners zoom-in-95 absolute top-24 min-w-[300px] animate-in border-2 border-primary bg-background/90 p-6 text-center">
           <h3 className="mb-4 font-sans text-primary text-xl">LOBBY JOINED</h3>
 
           {/* Timer Display */}
@@ -299,10 +303,13 @@ export function ModeSelector({ user }: ModeSelectorProps) {
             </div>
           </div>
 
-          <p className="mb-4 font-mono text-muted-foreground text-xs">
+          <p
+            aria-live="polite"
+            className="mb-4 font-mono text-muted-foreground text-xs"
+          >
             {displayTimeLeft > 0
-              ? "Spiel startet wenn voll oder Timer abläuft"
-              : "Spiel startet..."}
+              ? "Game starts when full or timer ends"
+              : "Game starting..."}
           </p>
 
           <div className="flex gap-2">
@@ -310,17 +317,17 @@ export function ModeSelector({ user }: ModeSelectorProps) {
               className="pixel-corners flex-1 border-green-600 bg-green-600 font-mono text-sm text-white uppercase hover:bg-green-700"
               onClick={handleForceStart}
             >
-              Lobby starten
+              START LOBBY
             </Button>
             <Button
               className="pixel-corners font-mono text-muted-foreground text-xs uppercase hover:text-destructive"
               onClick={handleLeave}
               variant="ghost"
             >
-              Verlassen
+              LEAVE
             </Button>
           </div>
-        </div>
+        </output>
       )}
     </div>
   );

@@ -189,7 +189,7 @@ export default function GamePage() {
   };
 
   // Score Calculation
-  const calculateScore = (player: Player) => {
+  const calculateScore = (player: { _id: string; credits?: number }) => {
     if (!player) {
       return 0;
     }

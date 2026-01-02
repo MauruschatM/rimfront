@@ -64,7 +64,9 @@ export default defineSchema({
     status: v.optional(v.string()), // "active", "eliminated", "spectator"
     eliminatedBy: v.optional(v.id("players")),
     lastBetrayalTime: v.optional(v.number()), // Time when alliance was broken by this player
-  }),
+  })
+    .index("by_userId", ["userId"])
+    .index("by_gameId_and_userId", ["gameId", "userId"]),
   maps: defineTable({
     gameId: v.id("games"),
     width: v.number(),

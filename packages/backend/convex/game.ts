@@ -3,7 +3,10 @@ import { internal } from "./_generated/api";
 import { internalMutation, mutation, query } from "./_generated/server";
 import { BASE_SIZE, BUILDINGS, TICK_INTERVAL_MS } from "./lib/constants";
 import { calculateBuildingCost } from "./lib/economy";
-import { findRandomBasePosition } from "./lib/placement";
+import {
+  findRandomBasePosition,
+  validateBuildingPlacement,
+} from "./lib/placement";
 import { runGameTick } from "./lib/simulation";
 import type { Building, Structure } from "./lib/types";
 
@@ -165,83 +168,21 @@ export const placeBuilding = mutation({
       throw new Error("Not enough credits");
     }
 
-    if (
-      args.x < 0 ||
-      args.x + buildingSpec.width > map.width ||
-      args.y < 0 ||
-      args.y + buildingSpec.height > map.height
-    ) {
-      throw new Error("Out of bounds");
-    }
-
-    // Energy Field Check
-    // Rule: Center-to-center distance <= 4 + (ExistingSize/2 + NewSize/2)
-    // effectively: Edge-to-edge distance <= 4
-    let inEnergyField = false;
     const myBuildings = map.buildings.filter(
       (b: any) => b.ownerId === player._id
     );
 
-    // If player has no buildings (e.g. wiped out or first build?), we might skip this.
-    // But usually they have a base. If they have 0 buildings, maybe allow placement?
-    // Assuming strictly > 0 for standard gameplay.
-    if (myBuildings.length === 0) {
-      inEnergyField = true;
-    } else {
-      const newCX = args.x + buildingSpec.width / 2;
-      const newCY = args.y + buildingSpec.height / 2;
-      const newRadius = Math.max(buildingSpec.width, buildingSpec.height) / 2; // Approx radius
-
-      for (const b of myBuildings) {
-        const bCX = b.x + b.width / 2;
-        const bCY = b.y + b.height / 2;
-        const bRadius = Math.max(b.width, b.height) / 2;
-
-        const dist = Math.sqrt((newCX - bCX) ** 2 + (newCY - bCY) ** 2);
-        const maxDist = 4 + bRadius + newRadius;
-
-        if (dist <= maxDist) {
-          inEnergyField = true;
-          break;
-        }
-      }
-    }
-
-    if (!inEnergyField) {
-      throw new Error(
-        "Must place within 4-tile energy field of existing buildings"
-      );
-    }
-
-    for (const b of map.buildings) {
-      const noOverlap =
-        args.x >= b.x + b.width + 1 ||
-        args.x + buildingSpec.width + 1 <= b.x ||
-        args.y >= b.y + b.height + 1 ||
-        args.y + buildingSpec.height + 1 <= b.y;
-
-      if (!noOverlap) {
-        throw new Error(
-          "Cannot place here: overlapping or too close to another building"
-        );
-      }
-    }
-
-    // Check collision with structures
-    if (map.structures) {
-      const structures = map.structures as Structure[];
-      for (const s of structures) {
-        const noOverlap =
-          args.x >= s.x + s.width || // Structures don't need +1 buffer usually, but let's be safe? standard collision is non-inclusive
-          args.x + buildingSpec.width <= s.x ||
-          args.y >= s.y + s.height ||
-          args.y + buildingSpec.height <= s.y;
-
-        if (!noOverlap) {
-          throw new Error("Cannot place here: blocked by structure");
-        }
-      }
-    }
+    validateBuildingPlacement(
+      args.x,
+      args.y,
+      buildingSpec.width,
+      buildingSpec.height,
+      map.width,
+      map.height,
+      map.buildings,
+      map.structures as Structure[],
+      myBuildings
+    );
 
     // Deduct credits and update inflation
     if (cost > 0) {

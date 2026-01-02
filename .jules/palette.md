@@ -1,3 +1,3 @@
-## 2024-05-23 - Semantic Disabling
-**Learning:** UX elements often use visual cues (like opacity or cursor change) to indicate disabled states without using the actual `disabled` attribute or `aria-disabled`. This hurts accessibility as screen readers and keyboard users might still interact with them.
-**Action:** Always pair visual disabled styles with `disabled` attribute for buttons/inputs and `aria-disabled="true"` for other interactive elements. Add tooltips or titles to explain *why* an action is disabled.
+## 2024-05-24 - Interactive Divs Pattern
+**Learning:** Found 'SubModeCard' and Game Mode cards using clickable 'div' elements for selection, which blocked keyboard users and screen readers.
+**Action:** Replaced with 'button' elements using 'type="button"', 'aria-pressed', and 'focus-visible' styles. Future selections should use semantic buttons or radio inputs.

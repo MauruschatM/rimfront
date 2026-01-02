@@ -35,6 +35,7 @@ interface Entity {
   targetWorkshopId?: string;
   targetHomeId?: string;
   workplaceId?: string;
+  reservedFactoryId?: string;
   // Combat
   lastAttackTime?: number;
   health?: number;
@@ -334,77 +335,80 @@ export function GameCanvas({
       }
     }
 
-    // Calculate stats for buildings (Active/Working counts)
+    // Calculate stats for buildings
     for (const entity of filteredEntities) {
-      if (entity.homeId && !entity.isInside) {
-        if (!stats[entity.homeId])
-          stats[entity.homeId] = {
-            active: 0,
-            working: 0,
-            sleeping: 0,
-            total: 0,
+      // Helper to init stats
+      const initStats = (id: string) => {
+        if (!stats[id])
+          stats[id] = {
+            active: 0, // Total visible/associated
+            working: 0, // Inside Workshop
+            sleeping: 0, // Inside House
+            total: 0, // Total associated (Alive)
+            assigned: 0, // Reserved Workshop
           };
-        stats[entity.homeId].active++;
+      };
+
+      // House Stats
+      if (entity.homeId) {
+        initStats(entity.homeId);
         stats[entity.homeId].total++;
-      }
-      if (entity.troopId && !entity.isInside) {
-        const troop = troops?.find((t) => t._id === entity.troopId);
-        if (troop) {
-          if (!stats[troop.barracksId])
-            stats[troop.barracksId] = {
-              active: 0,
-              working: 0,
-              sleeping: 0,
-              total: 0,
-            };
-          stats[troop.barracksId].active++;
-          stats[troop.barracksId].total++;
+        if (!entity.isInside) stats[entity.homeId].active++;
+        if (entity.isInside && entity.state === "sleeping") {
+          stats[entity.homeId].sleeping++;
         }
       }
-      if (entity.workplaceId) {
-        if (!stats[entity.workplaceId])
-          stats[entity.workplaceId] = {
-            active: 0,
-            working: 0,
-            sleeping: 0,
-            total: 0,
-          };
-        if (entity.state === "working") stats[entity.workplaceId].working++;
+
+      // Barracks Stats
+      if (entity.troopId) {
+        const troop = troops?.find((t) => t._id === entity.troopId);
+        if (troop) {
+          initStats(troop.barracksId);
+          stats[troop.barracksId].total++;
+          if (!entity.isInside) stats[troop.barracksId].active++;
+        }
       }
-      if (entity.homeId && entity.state === "sleeping") {
-        if (!stats[entity.homeId])
-          stats[entity.homeId] = {
-            active: 0,
-            working: 0,
-            sleeping: 0,
-            total: 0,
-          };
-        stats[entity.homeId].sleeping++;
+
+      // Workshop Stats
+      const workshopId = entity.reservedFactoryId || entity.workplaceId;
+      if (workshopId) {
+        initStats(workshopId);
+        stats[workshopId].assigned++;
+      }
+
+      if (entity.workplaceId && entity.isInside) {
+        initStats(entity.workplaceId);
+        stats[entity.workplaceId].working++;
       }
     }
 
     // Restore Logic: Populate lastSpawnTime from families and troops
+    // Restore Logic: Populate lastSpawnTime from families and troops
     if (families) {
       for (const family of families) {
-        if (!stats[family.homeId])
+        if (!stats[family.homeId]) {
           stats[family.homeId] = {
             active: 0,
             working: 0,
             sleeping: 0,
             total: 0,
+            assigned: 0,
           };
+        }
         stats[family.homeId].lastSpawnTime = family.lastSpawnTime;
       }
     }
     if (troops) {
       for (const troop of troops) {
-        if (!stats[troop.barracksId])
+        if (!stats[troop.barracksId]) {
           stats[troop.barracksId] = {
             active: 0,
             working: 0,
             sleeping: 0,
             total: 0,
+            assigned: 0,
           };
+        }
         stats[troop.barracksId].lastSpawnTime = troop.lastSpawnTime;
       }
     }

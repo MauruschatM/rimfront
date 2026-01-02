@@ -45,7 +45,8 @@ function TeammateStatus() {
       <Shield className="mx-auto mb-2 h-12 w-12 text-blue-500" />
       <p className="mb-4 font-bold text-blue-500">TEAMMATE</p>
       <p className="text-muted-foreground text-xs">
-        You are on the same team. Friendly fire is disabled and you share vision.
+        You are on the same team. Friendly fire is disabled and you share
+        vision.
       </p>
     </div>
   );

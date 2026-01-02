@@ -327,7 +327,7 @@ function handleRandomPatrol(
   mapWidth: number,
   mapHeight: number,
   blocked: Set<string>,
-  target?: { x: number; y: number },
+  target?: { x: number; y: number }
 ): boolean {
   if (Math.random() >= 0.4) return false;
 
@@ -395,10 +395,18 @@ export function handleIdleLogic(
   // If confused (betrayal penalty), ignore user orders and just wander randomly
   const effectiveTarget = isConfused ? undefined : target;
 
-  if (effectiveTarget) {
-     if (handlePathRequest(member, now, mapWidth, mapHeight, blocked, effectiveTarget)) {
-       return true;
-     }
+  if (
+    effectiveTarget &&
+    handlePathRequest(
+      member,
+      now,
+      mapWidth,
+      mapHeight,
+      blocked,
+      effectiveTarget
+    )
+  ) {
+    return true;
   }
 
   if (
@@ -410,11 +418,19 @@ export function handleIdleLogic(
       member.type === "member" &&
       workshops &&
       workshops.length > 0 &&
-      allEntities
+      allEntities &&
+      assignFactoryJob(
+        member,
+        workshops,
+        allEntities,
+        mapWidth,
+        mapHeight,
+        blocked,
+        !!isRoundTick,
+        now
+      )
     ) {
-      if (assignFactoryJob(member, workshops, allEntities, mapWidth, mapHeight, blocked, !!isRoundTick, now)) {
-        return true;
-      }
+      return true;
     }
 
     if (handleRandomPatrol(member, mapWidth, mapHeight, blocked, target)) {

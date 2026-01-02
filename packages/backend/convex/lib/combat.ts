@@ -185,6 +185,28 @@ export async function processActiveEntities(
                 if (targetEntity.health <= 0) {
                   await ctx.db.delete(targetEntity._id);
                   deletedEntityIds.add(targetEntity._id);
+
+                  // Commander Succession Logic
+                  if (
+                    targetEntity.type === "commander" &&
+                    targetEntity.troopId
+                  ) {
+                    const troopId = targetEntity.troopId;
+                    const possibleHeir = entities.find(
+                      (e) =>
+                        e.troopId === troopId &&
+                        e.type === "soldier" &&
+                        !deletedEntityIds.has(e._id) &&
+                        e.ownerId === targetEntity.ownerId
+                    );
+
+                    if (possibleHeir) {
+                      possibleHeir.type = "commander";
+                      await ctx.db.patch(possibleHeir._id, {
+                        type: "commander",
+                      });
+                    }
+                  }
                 } else {
                   await ctx.db.patch(targetEntity._id, {
                     health: targetEntity.health,

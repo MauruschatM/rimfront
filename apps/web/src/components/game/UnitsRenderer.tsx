@@ -110,11 +110,11 @@ export function UnitsRenderer({
   const turretGunsRef = useRef<THREE.InstancedMesh>(null);
 
   const interpolation = useInterpolatedUnits(entities, entityMap);
+  const tempObj = useMemo(() => new THREE.Object3D(), []);
 
   useFrame((state) => {
     const updateMesh = (mesh: THREE.InstancedMesh | null, list: Entity[]) => {
       if (!mesh) return;
-      const tempObj = new THREE.Object3D();
       list.forEach((entity, i) => {
         const pos =
           entity.type === "turret_gun"
@@ -168,7 +168,11 @@ export function UnitsRenderer({
         tempObj.scale.set(scale, scale, scale);
         tempObj.updateMatrix();
         mesh.setMatrixAt(i, tempObj.matrix);
+
+        // Reset transform for next iteration to prevent state bleeding
+        tempObj.position.set(0, 0, 0);
         tempObj.rotation.set(0, 0, 0);
+        tempObj.scale.set(1, 1, 1);
       });
       mesh.instanceMatrix.needsUpdate = true;
     };

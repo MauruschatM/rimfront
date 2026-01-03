@@ -1,8 +1,8 @@
 import { v } from "convex/values";
-import { authComponent } from "./auth";
 import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { type MutationCtx, mutation, query } from "./_generated/server";
+import { authComponent } from "./auth";
 import { generateMap, PLANETS } from "./lib/mapgen";
 
 async function findSuitableGame(
@@ -192,7 +192,7 @@ export const findOrCreateLobby = mutation({
 
     const playerId = await ctx.db.insert("players", {
       gameId,
-      userId: userId,
+      userId,
       isBot: false,
       name: cleanName,
       teamId,

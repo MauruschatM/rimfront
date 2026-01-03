@@ -40,6 +40,7 @@ export function ModeSelector({ user }: ModeSelectorProps) {
   const [gameId, setGameId] = React.useState<Id<"games"> | null>(null);
   const [playerId, setPlayerId] = React.useState<Id<"players"> | null>(null);
   const [displayTimeLeft, setDisplayTimeLeft] = React.useState(60);
+  const [isStarting, setIsStarting] = React.useState(false);
 
   const findOrCreateLobby = useMutation(api.matchmaking.findOrCreateLobby);
   const leaveLobby = useMutation(api.matchmaking.leaveLobby);
@@ -115,10 +116,12 @@ export function ModeSelector({ user }: ModeSelectorProps) {
       return;
     }
 
+    setIsStarting(true);
     try {
       await forceStartLobby({ gameId, playerId });
     } catch (error) {
       console.error("Failed to start lobby:", error);
+      setIsStarting(false);
     }
   };
 
@@ -293,7 +296,16 @@ export function ModeSelector({ user }: ModeSelectorProps) {
               </span>
             </div>
             {/* Progress bar */}
-            <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+            <div
+              aria-label="Lobby capacity"
+              aria-valuemax={16}
+              aria-valuemin={0}
+              aria-valuenow={
+                lobbyStatus?.status === "waiting" ? lobbyStatus.playerCount : 1
+              }
+              className="h-2 w-full overflow-hidden rounded-full bg-muted"
+              role="progressbar"
+            >
               <div
                 className="h-full bg-primary transition-all duration-300"
                 style={{
@@ -314,10 +326,17 @@ export function ModeSelector({ user }: ModeSelectorProps) {
 
           <div className="flex gap-2">
             <Button
-              className="pixel-corners flex-1 border-green-600 bg-green-600 font-mono text-sm text-white uppercase hover:bg-green-700"
+              className="pixel-corners flex-1 border-green-600 bg-green-600 font-mono text-sm text-white uppercase hover:bg-green-700 disabled:opacity-50"
+              disabled={isStarting}
               onClick={handleForceStart}
             >
-              START LOBBY
+              {isStarting ? (
+                <span className="flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" /> STARTING...
+                </span>
+              ) : (
+                "START LOBBY"
+              )}
             </Button>
             <Button
               className="pixel-corners font-mono text-muted-foreground text-xs uppercase hover:text-destructive"

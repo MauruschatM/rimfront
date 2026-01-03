@@ -159,6 +159,12 @@ export const findOrCreateLobby = mutation({
     const user = await authComponent.safeGetAuthUser(ctx);
     const userId = user ? user._id : args.userId;
 
+    // Sentinel Security: Rate Limiting
+    // Limit to 5 attempts per minute per user
+    if (userId) {
+      await checkRateLimit(ctx, userId, 5, 60_000);
+    }
+
     // Security: One active game per user (Rate Limiting / Anti-Spam)
     if (userId) {
       // Check only the most recent player records to avoid N+1 on full history
@@ -297,6 +303,44 @@ async function createNewTeams(
     } else {
       break;
     }
+  }
+}
+
+async function checkRateLimit(
+  ctx: MutationCtx,
+  identifier: string,
+  limit: number,
+  windowMs: number
+) {
+  const now = Date.now();
+  const record = await ctx.db
+    .query("rateLimits")
+    .withIndex("by_key", (q) => q.eq("key", identifier))
+    .unique();
+
+  if (record) {
+    if (now > record.windowStart + windowMs) {
+      // Window expired, reset
+      await ctx.db.patch(record._id, {
+        count: 1,
+        windowStart: now,
+      });
+    } else {
+      // Within window
+      if (record.count >= limit) {
+        throw new Error("Rate limit exceeded. Please try again later.");
+      }
+      await ctx.db.patch(record._id, {
+        count: record.count + 1,
+      });
+    }
+  } else {
+    // New record
+    await ctx.db.insert("rateLimits", {
+      key: identifier,
+      count: 1,
+      windowStart: now,
+    });
   }
 }
 

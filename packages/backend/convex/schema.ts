@@ -113,4 +113,9 @@ export default defineSchema({
     .index("by_players", ["player1Id", "player2Id"])
     .index("by_player1", ["player1Id"])
     .index("by_player2", ["player2Id"]),
+  rateLimits: defineTable({
+    key: v.string(), // identifier (userId or other)
+    count: v.number(),
+    windowStart: v.number(),
+  }).index("by_key", ["key"]),
 });

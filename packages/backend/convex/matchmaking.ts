@@ -4,6 +4,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { type MutationCtx, mutation, query } from "./_generated/server";
 import { authComponent } from "./auth";
 import { generateMap, PLANETS } from "./lib/mapgen";
+import { checkRateLimit } from "./lib/rateLimit";
 
 async function findSuitableGame(
   ctx: MutationCtx,
@@ -158,6 +159,11 @@ export const findOrCreateLobby = mutation({
     // Sentinel Security: Prefer authenticated user ID
     const user = await authComponent.safeGetAuthUser(ctx);
     const userId = user ? user._id : args.userId;
+
+    // Security: Rate Limiting
+    if (userId) {
+      await checkRateLimit(ctx, userId);
+    }
 
     // Security: One active game per user (Rate Limiting / Anti-Spam)
     if (userId) {

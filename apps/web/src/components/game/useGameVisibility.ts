@@ -13,6 +13,10 @@ interface UseGameVisibilityProps {
   troops?: Array<{ _id: string; barracksId: string; lastSpawnTime?: number }>;
 }
 
+// ⚡ Bolt Optimization: Use integer packing for chunk keys to avoid string allocation
+// Offset of 64 allows for coordinate range -64 to 64, which covers the 0-16 chunk range plus padding
+const getChunkKey = (cx: number, cy: number) => ((cx + 64) << 16) | (cy + 64);
+
 export function useGameVisibility({
   gameId,
   myPlayerId,
@@ -59,7 +63,8 @@ export function useGameVisibility({
     }
 
     // 2. Identify Visible Chunks (Simple Grid 16x16)
-    const visibleChunks = new Set<string>();
+    // ⚡ Bolt Optimization: using Set<number> instead of Set<string>
+    const visibleChunks = new Set<number>();
     const CHUNK_SIZE = 16;
 
     const markVisible = (x: number, y: number, radius: number) => {
@@ -70,7 +75,7 @@ export function useGameVisibility({
 
       for (let cx = minCX; cx <= maxCX; cx++) {
         for (let cy = minCY; cy <= maxCY; cy++) {
-          visibleChunks.add(`${cx},${cy}`);
+          visibleChunks.add(getChunkKey(cx, cy));
         }
       }
     };
@@ -98,7 +103,7 @@ export function useGameVisibility({
 
       const cx = Math.floor(x / CHUNK_SIZE);
       const cy = Math.floor(y / CHUNK_SIZE);
-      return visibleChunks.has(`${cx},${cy}`);
+      return visibleChunks.has(getChunkKey(cx, cy));
     };
 
     const filteredBuildings = buildings.filter((b) =>

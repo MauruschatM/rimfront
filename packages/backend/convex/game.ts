@@ -5,6 +5,7 @@ import { BASE_SIZE, BUILDINGS, TICK_INTERVAL_MS } from "./lib/constants";
 import { calculateBuildingCost } from "./lib/economy";
 import {
   findRandomBasePosition,
+  validateBasePlacement,
   validateBuildingPlacement,
 } from "./lib/placement";
 import { runGameTick } from "./lib/simulation";
@@ -54,31 +55,21 @@ export const placeBase = mutation({
       throw new Error("Map not generated");
     }
 
-    if (
-      args.x < 0 ||
-      args.x + BASE_SIZE > map.width ||
-      args.y < 0 ||
-      args.y + BASE_SIZE > map.height
-    ) {
-      throw new Error("Out of bounds");
-    }
-
     // Remove existing base from this player (if any) to allow repositioning
     const buildingsWithoutMyBase = map.buildings.filter(
       (b: any) => !(b.ownerId === player._id && b.type === "base_central")
     );
 
-    // Check collision with OTHER buildings only (not own base)
-    for (const b of buildingsWithoutMyBase) {
-      if (
-        args.x < b.x + b.width &&
-        args.x + BASE_SIZE > b.x &&
-        args.y < b.y + b.height &&
-        args.y + BASE_SIZE > b.y
-      ) {
-        throw new Error("Collides with another building");
-      }
-    }
+    validateBasePlacement(
+      args.x,
+      args.y,
+      BASE_SIZE,
+      BASE_SIZE,
+      map.width,
+      map.height,
+      buildingsWithoutMyBase,
+      map.structures as Structure[]
+    );
 
     const newBuilding = {
       id: Math.random().toString(36).slice(2),

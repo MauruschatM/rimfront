@@ -173,6 +173,27 @@ export function validateBuildingPlacement(
   validateStructureOverlap(x, y, width, height, structures);
 }
 
+/**
+ * Validates if a base can be placed at the specified location.
+ * Uses strict overlap checks (no buffer) and considers structures.
+ */
+export function validateBasePlacement(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  mapWidth: number,
+  mapHeight: number,
+  buildings: Building[],
+  structures: Structure[] | undefined
+): void {
+  validateBounds(x, y, width, height, mapWidth, mapHeight);
+
+  if (checkCollision(x, y, width, height, buildings, structures)) {
+    throw new Error("Collides with another building or structure");
+  }
+}
+
 function validateBounds(
   x: number,
   y: number,

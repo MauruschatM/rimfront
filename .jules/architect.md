@@ -1,0 +1,3 @@
+# Architect Journal
+
+## 2025-02-24 - [Duplicate Placement Logic] **Observation:** Placement validation logic is duplicated and inconsistent between `game.ts` (manual placement) and `lib/placement.ts` (auto-placement). Specifically, `placeBase` in `game.ts` manually checks overlaps but ignores structures (rocks/trees), whereas `lib/placement.ts` handles both but enforces a 1-tile buffer which `placeBase` might not want. **Refactor:** Unify validation into `lib/placement.ts` by creating a flexible `validateBasePlacement` function that handles strict overlap checks and structure collisions, then use it in `game.ts`.

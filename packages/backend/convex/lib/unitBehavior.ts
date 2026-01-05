@@ -221,22 +221,13 @@ function handlePathRequest(
 function assignFactoryJob(
   member: Entity,
   workshops: Building[],
-  allEntities: Entity[],
+  factoryReservations: Record<string, number>,
   mapWidth: number,
   mapHeight: number,
   blocked: Set<string>,
   isRoundTick: boolean,
   now: number
 ): boolean {
-  // Count reservations per factory
-  const factoryReservations: Record<string, number> = {};
-  for (const e of allEntities) {
-    if (e.reservedFactoryId && e.ownerId === member.ownerId) {
-      factoryReservations[e.reservedFactoryId] =
-        (factoryReservations[e.reservedFactoryId] || 0) + 1;
-    }
-  }
-
   // If member has reservation and it's not a reoptimization tick, walk to reserved factory
   if (member.reservedFactoryId && !isRoundTick) {
     const reservedWorkshop = workshops.find(
@@ -300,6 +291,11 @@ function assignFactoryJob(
     if (bestWorkshop) {
       // Reserve slot and walk to factory
       member.reservedFactoryId = bestWorkshop.id;
+
+      // UPDATE RESERVATION MAP so subsequent entities see the count increase
+      factoryReservations[bestWorkshop.id] =
+        (factoryReservations[bestWorkshop.id] || 0) + 1;
+
       const targetX = bestWorkshop.x + Math.floor(bestWorkshop.width / 2);
       const targetY = bestWorkshop.y - 1;
       const path = findPath(
@@ -388,7 +384,7 @@ export function handleIdleLogic(
   blocked: Set<string>,
   target?: { x: number; y: number },
   workshops?: Building[],
-  allEntities?: Entity[],
+  factoryReservations?: Record<string, number>,
   isRoundTick?: boolean,
   isConfused?: boolean
 ): boolean {
@@ -418,11 +414,11 @@ export function handleIdleLogic(
       member.type === "member" &&
       workshops &&
       workshops.length > 0 &&
-      allEntities &&
+      factoryReservations &&
       assignFactoryJob(
         member,
         workshops,
-        allEntities,
+        factoryReservations,
         mapWidth,
         mapHeight,
         blocked,
@@ -452,7 +448,7 @@ export function updateMember(
   target?: { x: number; y: number },
   workshops?: Building[],
   houses?: Building[],
-  allEntities?: Entity[],
+  factoryReservations?: Record<string, number>,
   isRoundTick?: boolean,
   isConfused?: boolean
 ): boolean {
@@ -474,7 +470,7 @@ export function updateMember(
       blocked,
       target,
       workshops,
-      allEntities,
+      factoryReservations,
       isRoundTick,
       isConfused
     )

@@ -29,6 +29,35 @@ interface ModeSelectorProps {
 export function ModeSelector({ user }: ModeSelectorProps) {
   const router = useRouter();
   const [isOpen, setIsOpen] = React.useState(false);
+  const containerRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(event.target as Node)
+      ) {
+        setIsOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsOpen(false);
+      }
+    };
+
+    if (isOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      document.addEventListener("keydown", handleKeyDown);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen]);
+
   const [activeTab, setActiveTab] = React.useState<"multiplayer" | "private">(
     "multiplayer"
   );
@@ -137,7 +166,7 @@ export function ModeSelector({ user }: ModeSelectorProps) {
   const timeDisplay = formatTime(displayTimeLeft);
 
   return (
-    <div className="z-50 flex flex-col items-center">
+    <div ref={containerRef} className="z-50 flex flex-col items-center">
       {/* Top Play Button */}
       <div className="relative">
         <Button
@@ -170,7 +199,11 @@ export function ModeSelector({ user }: ModeSelectorProps) {
 
       {/* Dropdown Menu */}
       {isOpen && status === "idle" && (
-        <div className="pixel-corners fade-in slide-in-from-top-4 absolute top-20 flex w-[800px] animate-in flex-col gap-6 border-2 border-muted bg-background/95 p-4 shadow-2xl backdrop-blur-sm">
+        <div
+          role="dialog"
+          aria-label="Game Mode Selection"
+          className="pixel-corners fade-in slide-in-from-top-4 absolute top-20 flex w-[800px] animate-in flex-col gap-6 border-2 border-muted bg-background/95 p-4 shadow-2xl backdrop-blur-sm"
+        >
           {/* Tabs */}
           <div className="flex gap-4 border-muted border-b-2 pb-2">
             <button

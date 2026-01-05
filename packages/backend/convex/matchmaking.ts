@@ -157,7 +157,10 @@ export const findOrCreateLobby = mutation({
 
     // Sentinel Security: Prefer authenticated user ID
     const user = await authComponent.safeGetAuthUser(ctx);
-    const userId = user ? user._id : args.userId;
+    // Sentinel Security: Trust only authenticated user ID.
+    // We ignore args.userId from the client to prevent spoofing/IDOR attacks where
+    // an unauthenticated user could claim to be another user and lock their account.
+    const userId = user ? user._id : undefined;
 
     // Security: One active game per user (Rate Limiting / Anti-Spam)
     if (userId) {

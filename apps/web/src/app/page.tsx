@@ -4,6 +4,7 @@ import { Loader2 } from "lucide-react";
 import { AuthDialog } from "@/components/auth/auth-dialog";
 import { ModeSelector } from "@/components/game/mode-selector";
 import { UserProfile } from "@/components/game/user-profile";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { authClient } from "@/lib/auth-client";
 
@@ -74,18 +75,22 @@ export default function Home() {
             </AuthDialog>
 
             <div className="flex justify-center gap-4">
-              <Button
-                className="font-mono text-muted-foreground text-xs"
-                variant="link"
+              <Badge
+                variant="outline"
+                className="gap-2 border-primary/20 bg-background/50 px-3 py-1 font-mono text-xs text-muted-foreground backdrop-blur-sm"
               >
-                SERVER STATUS: ONLINE
-              </Button>
-              <Button
-                className="font-mono text-muted-foreground text-xs"
-                variant="link"
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]" />
+                </span>
+                SERVER ONLINE
+              </Badge>
+              <Badge
+                variant="outline"
+                className="border-primary/20 bg-background/50 px-3 py-1 font-mono text-xs text-muted-foreground backdrop-blur-sm"
               >
                 V 0.1.0 ALPHA
-              </Button>
+              </Badge>
             </div>
           </div>
         )}

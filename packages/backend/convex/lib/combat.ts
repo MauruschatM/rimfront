@@ -27,6 +27,19 @@ export async function processActiveEntities(
   const deletedEntityIds = new Set<string>();
   let buildingsDamaged = false;
 
+  // ⚡ Bolt Optimization: Pre-calculate factory reservations (O(N))
+  // instead of recalculating for every idle member (O(M*N))
+  const factoryReservationsByOwner: Record<string, Record<string, number>> = {};
+  for (const e of entities) {
+    if (e.reservedFactoryId && e.ownerId) {
+      if (!factoryReservationsByOwner[e.ownerId]) {
+        factoryReservationsByOwner[e.ownerId] = {};
+      }
+      factoryReservationsByOwner[e.ownerId][e.reservedFactoryId] =
+        (factoryReservationsByOwner[e.ownerId][e.reservedFactoryId] || 0) + 1;
+    }
+  }
+
   for (const entity of activeEntities) {
     if (deletedEntityIds.has(entity._id)) {
       continue;
@@ -54,7 +67,7 @@ export async function processActiveEntities(
         targetPos,
         workshops,
         houses,
-        entities,
+        factoryReservationsByOwner[entity.ownerId] || {},
         isRoundTick,
         !!isConfused
       )

@@ -1,7 +1,7 @@
 import { api } from "@packages/backend/convex/_generated/api";
 import type { Id } from "@packages/backend/convex/_generated/dataModel";
 import { useMutation, useQuery } from "convex/react";
-import { Shield } from "lucide-react";
+import { Loader2, Shield } from "lucide-react";
 import React from "react";
 import { toast } from "sonner";
 import {
@@ -62,6 +62,7 @@ interface AllianceActionsProps {
   handleBreak: () => void;
   handleRenew: () => void;
   subMode: string;
+  pendingAction: string | null;
 }
 
 function AllianceActions({
@@ -74,7 +75,10 @@ function AllianceActions({
   handleBreak,
   handleRenew,
   subMode,
+  pendingAction,
 }: AllianceActionsProps) {
+  const isAnyPending = pendingAction !== null;
+
   if (subMode !== "ffa") {
     return (
       <div className="text-center">
@@ -86,23 +90,58 @@ function AllianceActions({
   }
 
   if (status === "none") {
-    return <Button onClick={handleRequest}>Request Alliance</Button>;
+    return (
+      <Button
+        className="w-full"
+        disabled={isAnyPending}
+        onClick={handleRequest}
+      >
+        {pendingAction === "request" && (
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        )}
+        Request Alliance
+      </Button>
+    );
   }
 
   if (status === "pending") {
     if (isSender) {
       return (
-        <Button onClick={handleReject} variant="outline">
+        <Button
+          className="w-full"
+          disabled={isAnyPending}
+          onClick={handleReject}
+          variant="outline"
+        >
+          {pendingAction === "reject" && (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          )}
           Cancel Request
         </Button>
       );
     }
     return (
       <div className="flex gap-2">
-        <Button onClick={handleAccept} variant="default">
+        <Button
+          className="flex-1"
+          disabled={isAnyPending}
+          onClick={handleAccept}
+          variant="default"
+        >
+          {pendingAction === "accept" && (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          )}
           Accept Alliance
         </Button>
-        <Button onClick={handleReject} variant="destructive">
+        <Button
+          className="flex-1"
+          disabled={isAnyPending}
+          onClick={handleReject}
+          variant="destructive"
+        >
+          {pendingAction === "reject" && (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          )}
           Reject
         </Button>
       </div>
@@ -119,14 +158,31 @@ function AllianceActions({
         </div>
 
         {timeLeft <= 30_000 && (
-          <Button className="w-full" onClick={handleRenew} variant="default">
+          <Button
+            className="w-full"
+            disabled={isAnyPending}
+            onClick={handleRenew}
+            variant="default"
+          >
+            {pendingAction === "renew" && (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            )}
             Renew Alliance
           </Button>
         )}
 
         <AlertDialog>
           <AlertDialogTrigger asChild>
-            <Button variant="destructive">Break Alliance</Button>
+            <Button
+              className="w-full"
+              disabled={isAnyPending}
+              variant="destructive"
+            >
+              {pendingAction === "break" && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Break Alliance
+            </Button>
           </AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
@@ -137,11 +193,20 @@ function AllianceActions({
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogCancel disabled={isAnyPending}>
+                Cancel
+              </AlertDialogCancel>
               <AlertDialogAction
                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                onClick={handleBreak}
+                disabled={isAnyPending}
+                onClick={(e) => {
+                  e.preventDefault();
+                  handleBreak();
+                }}
               >
+                {pendingAction === "break" && (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                )}
                 Yes, Break Alliance
               </AlertDialogAction>
             </AlertDialogFooter>
@@ -176,6 +241,8 @@ export function DiplomacyModal({
   const renewAlliance = useMutation(api.diplomacy.renewAlliance);
 
   const [now, setNow] = React.useState(Date.now());
+  const [pendingAction, setPendingAction] = React.useState<string | null>(null);
+
   React.useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
@@ -210,6 +277,7 @@ export function DiplomacyModal({
   const timeLeft = Math.max(0, expiresAt - now);
 
   const handleRequest = async () => {
+    setPendingAction("request");
     try {
       await requestAlliance({
         gameId: gameId as Id<"games">,
@@ -218,6 +286,8 @@ export function DiplomacyModal({
       toast.success("Alliance request sent");
     } catch (e: unknown) {
       if (e instanceof Error) toast.error(e.message);
+    } finally {
+      setPendingAction(null);
     }
   };
 
@@ -225,11 +295,14 @@ export function DiplomacyModal({
     if (!relationship) {
       return;
     }
+    setPendingAction("renew");
     try {
       await renewAlliance({ diplomacyId: relationship._id });
       toast.success("Alliance renewed!");
     } catch (e: unknown) {
       if (e instanceof Error) toast.error(e.message);
+    } finally {
+      setPendingAction(null);
     }
   };
 
@@ -237,11 +310,14 @@ export function DiplomacyModal({
     if (!relationship) {
       return;
     }
+    setPendingAction("accept");
     try {
       await acceptAlliance({ diplomacyId: relationship._id });
       toast.success("Alliance accepted");
     } catch (e: unknown) {
       if (e instanceof Error) toast.error(e.message);
+    } finally {
+      setPendingAction(null);
     }
   };
 
@@ -249,11 +325,14 @@ export function DiplomacyModal({
     if (!relationship) {
       return;
     }
+    setPendingAction("reject");
     try {
       await rejectAlliance({ diplomacyId: relationship._id });
       toast.info("Alliance request rejected/cancelled");
     } catch (e: unknown) {
       if (e instanceof Error) toast.error(e.message);
+    } finally {
+      setPendingAction(null);
     }
   };
 
@@ -261,11 +340,14 @@ export function DiplomacyModal({
     if (!relationship) {
       return;
     }
+    setPendingAction("break");
     try {
       await breakAlliance({ diplomacyId: relationship._id });
       toast.warning("Alliance broken! Troops are confused.");
     } catch (e: unknown) {
       if (e instanceof Error) toast.error(e.message);
+    } finally {
+      setPendingAction(null);
     }
   };
 
@@ -301,6 +383,7 @@ export function DiplomacyModal({
                     handleRenew={handleRenew}
                     handleRequest={handleRequest}
                     isSender={isSender}
+                    pendingAction={pendingAction}
                     status={status}
                     subMode={subMode}
                     timeLeft={timeLeft}

@@ -29,7 +29,6 @@ export function useGameVisibility({
   // ⚡ Bolt Optimization: Consolidate entity processing into one pass (O(N))
   // We explicitly cast gameId to any because api.diplomacy.getAlliances expects Id<"games">
   // but we are passing a string (which is usually compatible at runtime but TS might complain)
-  // However, in GameCanvas it was passed directly.
   const alliances = useQuery(api.diplomacy.getAlliances, {
     gameId: gameId as any,
   });
@@ -63,7 +62,6 @@ export function useGameVisibility({
     }
 
     // 2. Identify Visible Chunks (Simple Grid 16x16)
-    // ⚡ Bolt Optimization: using Set<number> instead of Set<string>
     const visibleChunks = new Set<number>();
     const CHUNK_SIZE = 16;
 
@@ -96,7 +94,6 @@ export function useGameVisibility({
       }
     }
 
-    // 3. Filter Entities & Buildings
     const isVisible = (x: number, y: number, ownerId: string, type: string) => {
       if (alliedPlayerIds.has(ownerId)) return true;
       if (type === "base_central") return true; // Always see Enemy Central Base
@@ -106,15 +103,7 @@ export function useGameVisibility({
       return visibleChunks.has(getChunkKey(cx, cy));
     };
 
-    const filteredBuildings = buildings.filter((b) =>
-      isVisible(b.x + b.width / 2, b.y + b.height / 2, b.ownerId, b.type)
-    );
-    const filteredEntities = entities
-      ? entities.filter((e) => isVisible(e.x, e.y, e.ownerId, e.type))
-      : [];
-
-    // --- Original Logic adapted to filtered lists ---
-
+    // 3. Process Entities (Single Pass O(N))
     const stats: Record<string, BuildingStats> = {};
     const map = new Map<string, Entity>();
     const attacking: Entity[] = [];
@@ -123,79 +112,93 @@ export function useGameVisibility({
     const soldiers: Entity[] = [];
     const turretGuns: Entity[] = [];
     const workers: Array<{ id: string; x: number; y: number }> = [];
+    const filteredEntities: Entity[] = [];
     const now = Date.now();
 
-    for (const entity of filteredEntities) {
-      map.set(entity._id, entity);
+    const initStats = (id: string) => {
+      if (!stats[id])
+        stats[id] = {
+          active: 0,
+          working: 0,
+          sleeping: 0,
+          total: 0,
+          assigned: 0,
+        };
+    };
 
-      if (
-        entity.attackTargetId &&
-        entity.attackEndTime &&
-        entity.attackEndTime > now
-      ) {
-        attacking.push(entity);
-      }
+    if (entities) {
+      for (const entity of entities) {
+        // Visibility Check
+        if (!isVisible(entity.x, entity.y, entity.ownerId, entity.type)) {
+          continue;
+        }
 
-      if (!entity.isInside) {
-        if (entity.type === "member") members.push(entity);
-        else if (entity.type === "commander") commanders.push(entity);
-        else if (entity.type === "soldier") soldiers.push(entity);
-        else if (entity.type === "turret_gun") turretGuns.push(entity);
-      }
+        // Add to filtered list & map
+        filteredEntities.push(entity);
+        map.set(entity._id, entity);
 
-      if (entity.state === "working" && entity.workplaceId) {
-        workers.push({ id: entity._id, x: entity.x, y: entity.y });
+        // Categorization
+        if (
+          entity.attackTargetId &&
+          entity.attackEndTime &&
+          entity.attackEndTime > now
+        ) {
+          attacking.push(entity);
+        }
+
+        if (!entity.isInside) {
+          if (entity.type === "member") members.push(entity);
+          else if (entity.type === "commander") commanders.push(entity);
+          else if (entity.type === "soldier") soldiers.push(entity);
+          else if (entity.type === "turret_gun") turretGuns.push(entity);
+        }
+
+        if (entity.state === "working" && entity.workplaceId) {
+          workers.push({ id: entity._id, x: entity.x, y: entity.y });
+        }
+
+        // Stats Calculation
+        // House Stats
+        if (entity.homeId) {
+          initStats(entity.homeId);
+          stats[entity.homeId].total++;
+          if (!entity.isInside) stats[entity.homeId].active++;
+          if (entity.isInside && entity.state === "sleeping") {
+            stats[entity.homeId].sleeping++;
+          }
+        }
+
+        // Barracks Stats
+        if (entity.troopId) {
+          const troop = troops?.find((t) => t._id === entity.troopId);
+          if (troop) {
+            initStats(troop.barracksId);
+            stats[troop.barracksId].total++;
+            if (!entity.isInside) stats[troop.barracksId].active++;
+          }
+        }
+
+        // Workshop Stats
+        const workshopId = entity.reservedFactoryId || entity.workplaceId;
+        if (workshopId) {
+          initStats(workshopId);
+          stats[workshopId].assigned++;
+        }
+
+        if (entity.workplaceId && entity.isInside) {
+          initStats(entity.workplaceId);
+          stats[entity.workplaceId].working++;
+        }
       }
     }
 
-    // Calculate stats for buildings
-    for (const entity of filteredEntities) {
-      // Helper to init stats
-      const initStats = (id: string) => {
-        if (!stats[id])
-          stats[id] = {
-            active: 0, // Total visible/associated
-            working: 0, // Inside Workshop
-            sleeping: 0, // Inside House
-            total: 0, // Total associated (Alive)
-            assigned: 0, // Reserved Workshop
-          };
-      };
+    // 4. Process Buildings (Separate Pass as it iterates buildings)
+    const filteredBuildings = buildings.filter((b) =>
+      isVisible(b.x + b.width / 2, b.y + b.height / 2, b.ownerId, b.type)
+    );
 
-      // House Stats
-      if (entity.homeId) {
-        initStats(entity.homeId);
-        stats[entity.homeId].total++;
-        if (!entity.isInside) stats[entity.homeId].active++;
-        if (entity.isInside && entity.state === "sleeping") {
-          stats[entity.homeId].sleeping++;
-        }
-      }
-
-      // Barracks Stats
-      if (entity.troopId) {
-        const troop = troops?.find((t) => t._id === entity.troopId);
-        if (troop) {
-          initStats(troop.barracksId);
-          stats[troop.barracksId].total++;
-          if (!entity.isInside) stats[troop.barracksId].active++;
-        }
-      }
-
-      // Workshop Stats
-      const workshopId = entity.reservedFactoryId || entity.workplaceId;
-      if (workshopId) {
-        initStats(workshopId);
-        stats[workshopId].assigned++;
-      }
-
-      if (entity.workplaceId && entity.isInside) {
-        initStats(entity.workplaceId);
-        stats[entity.workplaceId].working++;
-      }
-    }
-
-    // Restore Logic: Populate lastSpawnTime from families and troops
+    // 5. Restore Logic: Populate lastSpawnTime from families and troops
+    // These iterate over different collections, so they remain separate.
     if (families) {
       for (const family of families) {
         if (!stats[family.homeId]) {

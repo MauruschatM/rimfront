@@ -508,6 +508,13 @@ export const leaveLobby = mutation({
       return;
     }
 
+    // Sentinel Security: IDOR Protection
+    // Ensure that if the player is linked to a user account, the caller is that user.
+    const user = await authComponent.safeGetAuthUser(ctx);
+    if (player.userId && (!user || user._id !== player.userId)) {
+      throw new Error("Unauthorized: You can only remove your own player");
+    }
+
     if (player.gameId !== args.gameId) {
       throw new Error("Player is not in this game");
     }
@@ -544,6 +551,12 @@ export const forceStartLobby = mutation({
     const player = await ctx.db.get(args.playerId);
     if (!player) {
       throw new Error("Player not found");
+    }
+
+    // Sentinel Security: IDOR Protection
+    const user = await authComponent.safeGetAuthUser(ctx);
+    if (player.userId && (!user || user._id !== player.userId)) {
+      throw new Error("Unauthorized: You can only force start your own game");
     }
 
     if (player.gameId !== args.gameId) {

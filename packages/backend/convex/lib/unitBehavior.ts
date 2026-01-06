@@ -1,13 +1,11 @@
 import type { MutationCtx } from "../_generated/server";
 import { FACTORY_CAPACITY, TICKS_PER_TILE } from "./constants";
 import { findPath } from "./pathfinding";
-import type { Building, Entity } from "./types";
+import type { Building, Entity, UnitUpdateContext } from "./types";
 
 function checkPathCompletion(
   member: Entity,
-  now: number,
-  workshops?: Building[],
-  houses?: Building[]
+  context: UnitUpdateContext
 ): boolean {
   if (!member.path) return false;
 
@@ -22,8 +20,8 @@ function checkPathCompletion(
   member.pathIndex = undefined;
   member.pathProgress = undefined;
 
-  if (member.targetWorkshopId && workshops) {
-    const workshop = workshops.find((w) => w.id === member.targetWorkshopId);
+  if (member.targetWorkshopId && context.workshops) {
+    const workshop = context.workshops.find((w) => w.id === member.targetWorkshopId);
     if (
       workshop &&
       member.x >= workshop.x - 1 &&
@@ -35,14 +33,14 @@ function checkPathCompletion(
       member.workplaceId = member.targetWorkshopId;
       member.targetWorkshopId = undefined;
       member.isInside = true;
-      member.stateEnd = now + 15_000 + Math.random() * 10_000;
+      member.stateEnd = context.now + 15_000 + Math.random() * 10_000;
       return true;
     }
     member.targetWorkshopId = undefined;
   }
 
-  if (member.targetHomeId && member.homeId && houses) {
-    const home = houses.find((h) => h.id === member.homeId);
+  if (member.targetHomeId && member.homeId && context.houses) {
+    const home = context.houses.find((h) => h.id === member.homeId);
     if (
       home &&
       member.x >= home.x - 1 &&
@@ -53,14 +51,14 @@ function checkPathCompletion(
       member.state = "sleeping";
       member.targetHomeId = undefined;
       member.isInside = true;
-      member.stateEnd = now + 20_000 + Math.random() * 10_000;
+      member.stateEnd = context.now + 20_000 + Math.random() * 10_000;
       return true;
     }
     member.targetHomeId = undefined;
   }
 
   member.state = "idle";
-  member.stateEnd = now + 3000 + Math.random() * 3000;
+  member.stateEnd = context.now + 3000 + Math.random() * 3000;
   member.nextPathAttempt = undefined; // Reset backoff
   return true;
 }
@@ -102,12 +100,9 @@ function handleMovementInterpolation(member: Entity): void {
 }
 
 // Generic update for any member (Family, Commander, Soldier)
-// workshops and houses parameters are optional - used by family members for work/home cycle
 export function handleWalking(
   member: Entity,
-  now: number,
-  workshops?: Building[],
-  houses?: Building[]
+  context: UnitUpdateContext
 ): boolean {
   if (!member.path || member.path.length === 0) {
     return false;
@@ -118,7 +113,7 @@ export function handleWalking(
 
   // If we're at or past the end of the path, finalize
   if (currentIndex >= pathLen - 1) {
-    return checkPathCompletion(member, now, workshops, houses);
+    return checkPathCompletion(member, context);
   }
 
   handleMovementInterpolation(member);
@@ -127,34 +122,30 @@ export function handleWalking(
 
 export function handleWorking(
   member: Entity,
-  now: number,
-  mapWidth: number,
-  mapHeight: number,
-  blocked: Set<string>,
-  houses?: Building[]
+  context: UnitUpdateContext
 ): boolean {
   if (
     member.state !== "working" ||
     !member.stateEnd ||
-    now <= member.stateEnd
+    context.now <= member.stateEnd
   ) {
     return false;
   }
 
-  if (member.homeId && houses) {
-    const home = houses.find((h) => h.id === member.homeId);
+  if (member.homeId && context.houses) {
+    const home = context.houses.find((h) => h.id === member.homeId);
     if (home) {
       const targetX = home.x + Math.floor(home.width / 2);
       const targetY = home.y + home.height;
       const path = findPath(
         { x: member.x, y: member.y },
         {
-          x: Math.max(0, Math.min(mapWidth - 1, targetX)),
-          y: Math.max(0, Math.min(mapHeight - 1, targetY)),
+          x: Math.max(0, Math.min(context.mapWidth - 1, targetX)),
+          y: Math.max(0, Math.min(context.mapHeight - 1, targetY)),
         },
-        mapWidth,
-        mapHeight,
-        blocked
+        context.mapWidth,
+        context.mapHeight,
+        context.blocked
       );
       if (path && path.length > 0) {
         member.path = path;
@@ -169,7 +160,7 @@ export function handleWorking(
   }
   member.state = "idle";
   member.workplaceId = undefined;
-  member.stateEnd = now + 3000 + Math.random() * 3000;
+  member.stateEnd = context.now + 3000 + Math.random() * 3000;
   return true;
 }
 
@@ -188,22 +179,19 @@ export function handleSleeping(member: Entity, now: number): boolean {
 
 function handlePathRequest(
   member: Entity,
-  now: number,
-  mapWidth: number,
-  mapHeight: number,
-  blocked: Set<string>,
+  context: UnitUpdateContext,
   target: { x: number; y: number }
 ): boolean {
   if (member.x === target.x && member.y === target.y) return false;
 
   // Check backoff
-  if (!member.nextPathAttempt || now >= member.nextPathAttempt) {
+  if (!member.nextPathAttempt || context.now >= member.nextPathAttempt) {
     const path = findPath(
       { x: member.x, y: member.y },
       target,
-      mapWidth,
-      mapHeight,
-      blocked
+      context.mapWidth,
+      context.mapHeight,
+      context.blocked
     );
     if (path) {
       member.path = path;
@@ -213,21 +201,17 @@ function handlePathRequest(
       return true;
     }
     // Pathfinding failed: Backoff for 2 seconds
-    member.nextPathAttempt = now + 2000;
+    member.nextPathAttempt = context.now + 2000;
   }
   return false;
 }
 
 function assignFactoryJob(
   member: Entity,
-  workshops: Building[],
-  allEntities: Entity[],
-  mapWidth: number,
-  mapHeight: number,
-  blocked: Set<string>,
-  isRoundTick: boolean,
-  now: number
+  context: UnitUpdateContext
 ): boolean {
+  const { workshops, allEntities, mapWidth, mapHeight, blocked, isRoundTick, now } = context;
+
   // Count reservations per factory
   const factoryReservations: Record<string, number> = {};
   for (const e of allEntities) {
@@ -324,12 +308,12 @@ function assignFactoryJob(
 
 function handleRandomPatrol(
   member: Entity,
-  mapWidth: number,
-  mapHeight: number,
-  blocked: Set<string>,
+  context: UnitUpdateContext,
   target?: { x: number; y: number }
 ): boolean {
   if (Math.random() >= 0.4) return false;
+
+  const { mapWidth, mapHeight, blocked } = context;
 
   const isTroop = member.type === "soldier" || member.type === "commander";
   let anchorX = member.x;
@@ -382,14 +366,8 @@ function handleRandomPatrol(
 
 export function handleIdleLogic(
   member: Entity,
-  now: number,
-  mapWidth: number,
-  mapHeight: number,
-  blocked: Set<string>,
+  context: UnitUpdateContext,
   target?: { x: number; y: number },
-  workshops?: Building[],
-  allEntities?: Entity[],
-  isRoundTick?: boolean,
   isConfused?: boolean
 ): boolean {
   // If confused (betrayal penalty), ignore user orders and just wander randomly
@@ -399,10 +377,7 @@ export function handleIdleLogic(
     effectiveTarget &&
     handlePathRequest(
       member,
-      now,
-      mapWidth,
-      mapHeight,
-      blocked,
+      context,
       effectiveTarget
     )
   ) {
@@ -411,33 +386,27 @@ export function handleIdleLogic(
 
   if (
     (member.state === "idle" || member.state === "patrol") &&
-    (!member.stateEnd || now > member.stateEnd)
+    (!member.stateEnd || context.now > member.stateEnd)
   ) {
     // Only family members use factory reservation
     if (
       member.type === "member" &&
-      workshops &&
-      workshops.length > 0 &&
-      allEntities &&
+      context.workshops &&
+      context.workshops.length > 0 &&
+      context.allEntities &&
       assignFactoryJob(
         member,
-        workshops,
-        allEntities,
-        mapWidth,
-        mapHeight,
-        blocked,
-        !!isRoundTick,
-        now
+        context
       )
     ) {
       return true;
     }
 
-    if (handleRandomPatrol(member, mapWidth, mapHeight, blocked, target)) {
+    if (handleRandomPatrol(member, context, target)) {
       return true;
     }
 
-    member.stateEnd = now + 5000 + Math.random() * 5000;
+    member.stateEnd = context.now + 5000 + Math.random() * 5000;
     return true;
   }
   return false;
@@ -445,37 +414,24 @@ export function handleIdleLogic(
 
 export function updateMember(
   member: Entity,
-  now: number,
-  mapWidth: number,
-  mapHeight: number,
-  blocked: Set<string>,
+  context: UnitUpdateContext,
   target?: { x: number; y: number },
-  workshops?: Building[],
-  houses?: Building[],
-  allEntities?: Entity[],
-  isRoundTick?: boolean,
   isConfused?: boolean
 ): boolean {
-  if (handleWalking(member, now, workshops, houses)) {
+  if (handleWalking(member, context)) {
     return true;
   }
-  if (handleWorking(member, now, mapWidth, mapHeight, blocked, houses)) {
+  if (handleWorking(member, context)) {
     return true;
   }
-  if (handleSleeping(member, now)) {
+  if (handleSleeping(member, context.now)) {
     return true;
   }
   if (
     handleIdleLogic(
       member,
-      now,
-      mapWidth,
-      mapHeight,
-      blocked,
+      context,
       target,
-      workshops,
-      allEntities,
-      isRoundTick,
       isConfused
     )
   ) {

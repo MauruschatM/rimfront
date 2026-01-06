@@ -83,3 +83,14 @@ export interface Player {
   hasPlacedBase?: boolean;
   inflation?: number;
 }
+
+export interface UnitUpdateContext {
+  now: number;
+  mapWidth: number;
+  mapHeight: number;
+  blocked: Set<string>;
+  workshops: Building[];
+  houses: Building[];
+  allEntities: Entity[];
+  isRoundTick: boolean;
+}

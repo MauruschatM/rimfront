@@ -1,5 +1,5 @@
 import type { SpatialHash } from "./spatial";
-import type { Building, Entity, Troop } from "./types";
+import type { Building, Entity, Troop, UnitUpdateContext } from "./types";
 import { updateMember } from "./unitBehavior";
 
 export async function processActiveEntities(
@@ -27,6 +27,17 @@ export async function processActiveEntities(
   const deletedEntityIds = new Set<string>();
   let buildingsDamaged = false;
 
+  const updateContext: UnitUpdateContext = {
+    now,
+    mapWidth,
+    mapHeight,
+    blocked,
+    workshops,
+    houses,
+    allEntities: entities,
+    isRoundTick,
+  };
+
   for (const entity of activeEntities) {
     if (deletedEntityIds.has(entity._id)) {
       continue;
@@ -47,15 +58,8 @@ export async function processActiveEntities(
       entity.type !== "turret_gun" && // Turret guns don't move
       updateMember(
         entity,
-        now,
-        mapWidth,
-        mapHeight,
-        blocked,
+        updateContext,
         targetPos,
-        workshops,
-        houses,
-        entities,
-        isRoundTick,
         !!isConfused
       )
     ) {

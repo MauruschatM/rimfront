@@ -17,6 +17,12 @@ import {
 import { useRouter } from "next/navigation";
 import * as React from "react";
 import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 interface ModeSelectorProps {
@@ -30,6 +36,8 @@ export function ModeSelector({ user }: ModeSelectorProps) {
   const router = useRouter();
   const [isOpen, setIsOpen] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement>(null);
+  const playButtonRef = React.useRef<HTMLButtonElement>(null);
+  const firstOptionRef = React.useRef<HTMLButtonElement>(null);
 
   React.useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -44,12 +52,17 @@ export function ModeSelector({ user }: ModeSelectorProps) {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setIsOpen(false);
+        // Return focus to trigger when closing via keyboard
+        playButtonRef.current?.focus();
       }
     };
 
     if (isOpen) {
       document.addEventListener("mousedown", handleClickOutside);
       document.addEventListener("keydown", handleKeyDown);
+      // Move focus to first option when opened
+      // Small timeout to ensure element is rendered
+      setTimeout(() => firstOptionRef.current?.focus(), 50);
     }
 
     return () => {
@@ -119,6 +132,11 @@ export function ModeSelector({ user }: ModeSelectorProps) {
       setPlayerId(result.playerId);
       setStatus("joined");
       setIsOpen(false);
+      // Focus will be lost when dropdown closes, so we should focus something useful
+      // The "Play" button is a good candidate, but it changes to "Joined" state
+      // which is non-interactive for reopening.
+      // But we have "START LOBBY" inside the joined overlay.
+      // Actually, since the overlay appears, we should focus something in there.
     } catch (error) {
       console.error("Failed to join game:", error);
       setStatus("idle");
@@ -135,6 +153,8 @@ export function ModeSelector({ user }: ModeSelectorProps) {
       setGameId(null);
       setPlayerId(null);
       setStatus("idle");
+      // Focus back on the main button
+      setTimeout(() => playButtonRef.current?.focus(), 50);
     } catch (error) {
       console.error("Failed to leave lobby:", error);
     }
@@ -166,222 +186,241 @@ export function ModeSelector({ user }: ModeSelectorProps) {
   const timeDisplay = formatTime(displayTimeLeft);
 
   return (
-    <div ref={containerRef} className="z-50 flex flex-col items-center">
-      {/* Top Play Button */}
-      <div className="relative">
-        <Button
-          className={cn(
-            "pixel-corners pixel-border relative z-50 h-16 rounded-none px-12 font-sans text-xl transition-all duration-200",
-            isOpen
-              ? "border-green-800 bg-green-600 text-white hover:bg-green-700"
-              : "border-primary bg-primary text-primary-foreground hover:bg-primary/90"
-          )}
-          onClick={handlePlay}
-          size="lg"
-        >
-          {status === "searching" ? (
-            <span className="flex items-center gap-2">
-              <Loader2 className="h-5 w-5 animate-spin" /> SEARCHING...
-            </span>
-          ) : status === "joined" ? (
-            <span>JOINED LOBBY</span>
-          ) : isOpen ? (
-            <span className="flex items-center gap-2">
-              READY <Play className="h-5 w-5 fill-current" />
-            </span>
-          ) : (
-            <span className="flex items-center gap-2">
-              PLAY <Play className="h-5 w-5 fill-current" />
-            </span>
-          )}
-        </Button>
-      </div>
+    <TooltipProvider>
+      <div className="z-50 flex flex-col items-center" ref={containerRef}>
+        {/* Top Play Button */}
+        <div className="relative">
+          <Button
+            aria-expanded={isOpen}
+            aria-haspopup="dialog"
+            className={cn(
+              "pixel-corners pixel-border relative z-50 h-16 rounded-none px-12 font-sans text-xl transition-all duration-200",
+              isOpen
+                ? "border-green-800 bg-green-600 text-white hover:bg-green-700"
+                : "border-primary bg-primary text-primary-foreground hover:bg-primary/90"
+            )}
+            onClick={handlePlay}
+            ref={playButtonRef}
+            size="lg"
+          >
+            {status === "searching" ? (
+              <span className="flex items-center gap-2">
+                <Loader2 className="h-5 w-5 animate-spin" /> SEARCHING...
+              </span>
+            ) : status === "joined" ? (
+              <span>JOINED LOBBY</span>
+            ) : isOpen ? (
+              <span className="flex items-center gap-2">
+                READY <Play className="h-5 w-5 fill-current" />
+              </span>
+            ) : (
+              <span className="flex items-center gap-2">
+                PLAY <Play className="h-5 w-5 fill-current" />
+              </span>
+            )}
+          </Button>
+        </div>
 
-      {/* Dropdown Menu */}
-      {isOpen && status === "idle" && (
-        <div
-          role="dialog"
-          aria-label="Game Mode Selection"
-          className="pixel-corners fade-in slide-in-from-top-4 absolute top-20 flex w-[800px] animate-in flex-col gap-6 border-2 border-muted bg-background/95 p-4 shadow-2xl backdrop-blur-sm"
-        >
-          {/* Tabs */}
-          <div className="flex gap-4 border-muted border-b-2 pb-2">
-            <button
-              className={cn(
-                "px-4 py-2 font-mono text-sm uppercase transition-colors hover:text-primary",
-                activeTab === "multiplayer"
-                  ? "-mb-2.5 border-primary border-b-2 text-primary"
-                  : "text-muted-foreground"
-              )}
-              onClick={() => setActiveTab("multiplayer")}
-              type="button"
-            >
-              Multiplayer
-            </button>
-            <button
-              aria-disabled="true"
-              aria-label="Private mode is currently locked"
-              className={cn(
-                "flex items-center gap-2 px-4 py-2 font-mono text-sm uppercase transition-colors",
-                activeTab === "private"
-                  ? "-mb-2.5 border-primary border-b-2 text-primary"
-                  : "cursor-not-allowed text-muted-foreground/50"
-              )}
-              disabled
-              title="Private mode is coming soon"
-              type="button"
-            >
-              Private <Lock className="h-3 w-3" />
-            </button>
-          </div>
-
-          {/* Mode Selection */}
-          <div className="space-y-2">
-            <h3 className="font-mono text-muted-foreground text-xs uppercase tracking-widest">
-              Game Mode
-            </h3>
-            <div className="flex gap-4">
+        {/* Dropdown Menu */}
+        {isOpen && status === "idle" && (
+          <div
+            aria-label="Game Mode Selection"
+            className="pixel-corners fade-in slide-in-from-top-4 absolute top-20 flex w-[800px] animate-in flex-col gap-6 border-2 border-muted bg-background/95 p-4 shadow-2xl backdrop-blur-sm"
+            role="dialog"
+          >
+            {/* Tabs */}
+            <div className="flex gap-4 border-muted border-b-2 pb-2">
               <button
-                aria-pressed={selectedMode === "fronts"}
                 className={cn(
-                  "pixel-corners w-full flex-1 cursor-pointer border-2 bg-muted/20 p-4 text-left transition-all hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
-                  selectedMode === "fronts"
-                    ? "border-primary bg-primary/10"
-                    : "border-transparent"
+                  "px-4 py-2 font-mono text-sm uppercase transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+                  activeTab === "multiplayer"
+                    ? "-mb-2.5 border-primary border-b-2 text-primary"
+                    : "text-muted-foreground"
                 )}
-                onClick={() => setSelectedMode("fronts")}
+                onClick={() => setActiveTab("multiplayer")}
+                ref={firstOptionRef}
                 type="button"
               >
-                <div className="flex items-center gap-3">
-                  <Globe className="h-8 w-8 text-primary" />
-                  <div>
-                    <div className="font-sans text-lg text-primary">FRONTS</div>
-                    <div className="font-mono text-muted-foreground text-xs">
-                      Tactical Warfare
+                Multiplayer
+              </button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span tabIndex={0}>
+                    <button
+                      aria-label="Private mode is currently locked"
+                      className={cn(
+                        "flex items-center gap-2 px-4 py-2 font-mono text-sm uppercase transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+                        activeTab === "private"
+                          ? "-mb-2.5 border-primary border-b-2 text-primary"
+                          : "cursor-not-allowed text-muted-foreground/50"
+                      )}
+                      disabled
+                      type="button"
+                    >
+                      Private <Lock className="h-3 w-3" />
+                    </button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Private lobbies coming soon!</p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
+
+            {/* Mode Selection */}
+            <div className="space-y-2">
+              <h3 className="font-mono text-muted-foreground text-xs uppercase tracking-widest">
+                Game Mode
+              </h3>
+              <div className="flex gap-4">
+                <button
+                  aria-pressed={selectedMode === "fronts"}
+                  className={cn(
+                    "pixel-corners w-full flex-1 cursor-pointer border-2 bg-muted/20 p-4 text-left transition-all hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+                    selectedMode === "fronts"
+                      ? "border-primary bg-primary/10"
+                      : "border-transparent"
+                  )}
+                  onClick={() => setSelectedMode("fronts")}
+                  type="button"
+                >
+                  <div className="flex items-center gap-3">
+                    <Globe className="h-8 w-8 text-primary" />
+                    <div>
+                      <div className="font-sans text-lg text-primary">
+                        FRONTS
+                      </div>
+                      <div className="font-mono text-muted-foreground text-xs">
+                        Tactical Warfare
+                      </div>
                     </div>
                   </div>
-                </div>
-              </button>
-              {/* Future modes can go here */}
+                </button>
+                {/* Future modes can go here */}
+              </div>
+            </div>
+
+            {/* Sub-Mode Selection */}
+            <div className="space-y-2">
+              <h3 className="font-mono text-muted-foreground text-xs uppercase tracking-widest">
+                Team Size
+              </h3>
+              <div className="grid grid-cols-4 gap-4">
+                <SubModeCard
+                  icon={<User className="h-6 w-6" />}
+                  label="Free For All"
+                  onClick={() => setSelectedSubMode("ffa")}
+                  selected={selectedSubMode === "ffa"}
+                />
+                <SubModeCard
+                  icon={<Users className="h-6 w-6" />}
+                  label="Duos"
+                  onClick={() => setSelectedSubMode("duos")}
+                  selected={selectedSubMode === "duos"}
+                />
+                <SubModeCard
+                  icon={<Shield className="h-6 w-6" />}
+                  label="Squads"
+                  onClick={() => setSelectedSubMode("squads")}
+                  selected={selectedSubMode === "squads"}
+                />
+                <SubModeCard
+                  icon={<Swords className="h-6 w-6" />}
+                  label="2 Teams"
+                  onClick={() => setSelectedSubMode("teams")}
+                  selected={selectedSubMode === "teams"}
+                />
+              </div>
             </div>
           </div>
+        )}
 
-          {/* Sub-Mode Selection */}
-          <div className="space-y-2">
-            <h3 className="font-mono text-muted-foreground text-xs uppercase tracking-widest">
-              Team Size
+        {/* Lobby Status Overlay with Timer */}
+        {status === "joined" && (
+          <output className="pixel-corners zoom-in-95 absolute top-24 min-w-[300px] animate-in border-2 border-primary bg-background/90 p-6 text-center">
+            <h3 className="mb-4 font-sans text-primary text-xl">
+              LOBBY JOINED
             </h3>
-            <div className="grid grid-cols-4 gap-4">
-              <SubModeCard
-                icon={<User className="h-6 w-6" />}
-                label="Free For All"
-                onClick={() => setSelectedSubMode("ffa")}
-                selected={selectedSubMode === "ffa"}
-              />
-              <SubModeCard
-                icon={<Users className="h-6 w-6" />}
-                label="Duos"
-                onClick={() => setSelectedSubMode("duos")}
-                selected={selectedSubMode === "duos"}
-              />
-              <SubModeCard
-                icon={<Shield className="h-6 w-6" />}
-                label="Squads"
-                onClick={() => setSelectedSubMode("squads")}
-                selected={selectedSubMode === "squads"}
-              />
-              <SubModeCard
-                icon={<Swords className="h-6 w-6" />}
-                label="2 Teams"
-                onClick={() => setSelectedSubMode("teams")}
-                selected={selectedSubMode === "teams"}
-              />
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* Lobby Status Overlay with Timer */}
-      {status === "joined" && (
-        <output className="pixel-corners zoom-in-95 absolute top-24 min-w-[300px] animate-in border-2 border-primary bg-background/90 p-6 text-center">
-          <h3 className="mb-4 font-sans text-primary text-xl">LOBBY JOINED</h3>
-
-          {/* Timer Display */}
-          <div className="mb-4 flex items-center justify-center gap-2">
-            <Clock className="h-6 w-6 animate-pulse text-primary" />
-            <span className="font-bold font-mono text-4xl text-white">
-              {timeDisplay.value}
-            </span>
-            <span className="font-mono text-muted-foreground text-sm">
-              {timeDisplay.unit}
-            </span>
-          </div>
-
-          {/* Player Count */}
-          <div className="mb-2">
-            <div className="mb-1 flex items-center justify-center gap-2">
-              <Users className="h-4 w-4 text-muted-foreground" />
-              <span className="font-mono text-lg text-white">
-                {lobbyStatus?.status === "waiting"
-                  ? lobbyStatus.playerCount
-                  : 1}
-                <span className="text-muted-foreground">/16</span>
+            {/* Timer Display */}
+            <div className="mb-4 flex items-center justify-center gap-2">
+              <Clock className="h-6 w-6 animate-pulse text-primary" />
+              <span className="font-bold font-mono text-4xl text-white">
+                {timeDisplay.value}
+              </span>
+              <span className="font-mono text-muted-foreground text-sm">
+                {timeDisplay.unit}
               </span>
             </div>
-            {/* Progress bar */}
-            <div
-              aria-label="Lobby capacity"
-              aria-valuemax={16}
-              aria-valuemin={0}
-              aria-valuenow={
-                lobbyStatus?.status === "waiting" ? lobbyStatus.playerCount : 1
-              }
-              className="h-2 w-full overflow-hidden rounded-full bg-muted"
-              role="progressbar"
-            >
-              <div
-                className="h-full bg-primary transition-all duration-300"
-                style={{
-                  width: `${((lobbyStatus?.status === "waiting" ? lobbyStatus.playerCount : 1) / 16) * 100}%`,
-                }}
-              />
-            </div>
-          </div>
 
-          <p
-            aria-live="polite"
-            className="mb-4 font-mono text-muted-foreground text-xs"
-          >
-            {displayTimeLeft > 0
-              ? "Game starts when full or timer ends"
-              : "Game starting..."}
-          </p>
-
-          <div className="flex gap-2">
-            <Button
-              className="pixel-corners flex-1 border-green-600 bg-green-600 font-mono text-sm text-white uppercase hover:bg-green-700 disabled:opacity-50"
-              disabled={isStarting}
-              onClick={handleForceStart}
-            >
-              {isStarting ? (
-                <span className="flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin" /> STARTING...
+            {/* Player Count */}
+            <div className="mb-2">
+              <div className="mb-1 flex items-center justify-center gap-2">
+                <Users className="h-4 w-4 text-muted-foreground" />
+                <span className="font-mono text-lg text-white">
+                  {lobbyStatus?.status === "waiting"
+                    ? lobbyStatus.playerCount
+                    : 1}
+                  <span className="text-muted-foreground">/16</span>
                 </span>
-              ) : (
-                "START LOBBY"
-              )}
-            </Button>
-            <Button
-              className="pixel-corners font-mono text-muted-foreground text-xs uppercase hover:text-destructive"
-              onClick={handleLeave}
-              variant="ghost"
+              </div>
+              {/* Progress bar */}
+              <div
+                aria-label="Lobby capacity"
+                aria-valuemax={16}
+                aria-valuemin={0}
+                aria-valuenow={
+                  lobbyStatus?.status === "waiting"
+                    ? lobbyStatus.playerCount
+                    : 1
+                }
+                className="h-2 w-full overflow-hidden rounded-full bg-muted"
+                role="progressbar"
+              >
+                <div
+                  className="h-full bg-primary transition-all duration-300"
+                  style={{
+                    width: `${((lobbyStatus?.status === "waiting" ? lobbyStatus.playerCount : 1) / 16) * 100}%`,
+                  }}
+                />
+              </div>
+            </div>
+
+            <p
+              aria-live="polite"
+              className="mb-4 font-mono text-muted-foreground text-xs"
             >
-              LEAVE
-            </Button>
-          </div>
-        </output>
-      )}
-    </div>
+              {displayTimeLeft > 0
+                ? "Game starts when full or timer ends"
+                : "Game starting..."}
+            </p>
+
+            <div className="flex gap-2">
+              <Button
+                className="pixel-corners flex-1 border-green-600 bg-green-600 font-mono text-sm text-white uppercase hover:bg-green-700 disabled:opacity-50"
+                disabled={isStarting}
+                onClick={handleForceStart}
+              >
+                {isStarting ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" /> STARTING...
+                  </span>
+                ) : (
+                  "START LOBBY"
+                )}
+              </Button>
+              <Button
+                className="pixel-corners font-mono text-muted-foreground text-xs uppercase hover:text-destructive"
+                onClick={handleLeave}
+                variant="ghost"
+              >
+                LEAVE
+              </Button>
+            </div>
+          </output>
+        )}
+      </div>
+    </TooltipProvider>
   );
 }
 

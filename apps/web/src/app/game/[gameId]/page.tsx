@@ -2,6 +2,10 @@
 
 import { api } from "@packages/backend/convex/_generated/api";
 import type { Id } from "@packages/backend/convex/_generated/dataModel";
+import {
+  BUILDING_TYPES,
+  UNIT_TYPES,
+} from "@packages/backend/convex/lib/constants";
 import { useMutation, useQuery } from "convex/react";
 import { Crosshair, Hammer, Loader2, Shield } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
@@ -16,11 +20,41 @@ import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 
 const BUILDINGS_INFO = [
-  { id: "house", name: "House", width: 2, height: 2, baseCost: 2000 },
-  { id: "workshop", name: "Workshop", width: 4, height: 4, baseCost: 4000 },
-  { id: "barracks", name: "Barracks", width: 3, height: 3, baseCost: 4000 },
-  { id: "wall", name: "Wall", width: 1, height: 1, baseCost: 500 },
-  { id: "turret", name: "Turret", width: 2, height: 2, baseCost: 5000 },
+  {
+    id: BUILDING_TYPES.HOUSE,
+    name: "House",
+    width: 2,
+    height: 2,
+    baseCost: 2000,
+  },
+  {
+    id: BUILDING_TYPES.WORKSHOP,
+    name: "Workshop",
+    width: 4,
+    height: 4,
+    baseCost: 4000,
+  },
+  {
+    id: BUILDING_TYPES.BARRACKS,
+    name: "Barracks",
+    width: 3,
+    height: 3,
+    baseCost: 4000,
+  },
+  {
+    id: BUILDING_TYPES.WALL,
+    name: "Wall",
+    width: 1,
+    height: 1,
+    baseCost: 500,
+  },
+  {
+    id: BUILDING_TYPES.TURRET,
+    name: "Turret",
+    width: 2,
+    height: 2,
+    baseCost: 5000,
+  },
 ];
 
 interface Building {
@@ -73,7 +107,7 @@ export default function GamePage() {
   // Modes: Build, Defense (Troop Command)
   const [mode, setMode] = React.useState<"none" | "build" | "defense">("none");
   const [selectedBuilding, setSelectedBuilding] = React.useState<string | null>(
-    "house"
+    BUILDING_TYPES.HOUSE
   );
   const [selectedTroopId, setSelectedTroopId] = React.useState<string | null>(
     null
@@ -196,13 +230,13 @@ export default function GamePage() {
     let buildingScore = 0;
     for (const b of buildings as Building[]) {
       if (b.ownerId === player._id) {
-        if (b.type === "house") {
+        if (b.type === BUILDING_TYPES.HOUSE) {
           buildingScore += 2000;
-        } else if (b.type === "workshop") {
+        } else if (b.type === BUILDING_TYPES.WORKSHOP) {
           buildingScore += 4000;
-        } else if (b.type === "barracks") {
+        } else if (b.type === BUILDING_TYPES.BARRACKS) {
           buildingScore += 4000;
-        } else if (b.type === "base_central") {
+        } else if (b.type === BUILDING_TYPES.CENTRAL_BASE) {
           buildingScore += 10_000;
         }
       }
@@ -217,7 +251,8 @@ export default function GamePage() {
 
   // Keep playerBuildings for isFirstOfType check
   const playerBuildings = (buildings as Building[]).filter(
-    (b) => b.ownerId === myPlayer?._id && b.type !== "base_central"
+    (b) =>
+      b.ownerId === myPlayer?._id && b.type !== BUILDING_TYPES.CENTRAL_BASE
   );
 
   // Helper to check if this is the first building of a type
@@ -319,7 +354,8 @@ export default function GamePage() {
                   <span className="font-mono text-[10px] text-white/50">
                     {
                       (entities as Entity[]).filter(
-                        (e) => e.troopId === t._id && e.type === "soldier"
+                        (e) =>
+                          e.troopId === t._id && e.type === UNIT_TYPES.SOLDIER
                       ).length
                     }{" "}
                     Soldiers
@@ -390,7 +426,7 @@ export default function GamePage() {
                 onClick={() => {
                   setMode(mode === "build" ? "none" : "build");
                   if (mode !== "build") {
-                    setSelectedBuilding("house");
+                    setSelectedBuilding(BUILDING_TYPES.HOUSE);
                   }
                 }}
                 variant={mode === "build" ? "default" : "secondary"}

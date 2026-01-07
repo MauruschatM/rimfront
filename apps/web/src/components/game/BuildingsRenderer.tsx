@@ -1,3 +1,10 @@
+import {
+  BARRACKS_CAPACITY,
+  BUILDING_TYPES,
+  FACTORY_CAPACITY,
+  HOUSE_CAPACITY,
+  SPAWN_INTERVAL_MS,
+} from "@packages/backend/convex/lib/constants";
 import { Text } from "@react-three/drei";
 import { useEffect, useState } from "react";
 
@@ -15,24 +22,19 @@ interface Building {
   capturingOwnerId?: string;
 }
 
-const FACTORY_CAPACITY = 16;
-const HOUSE_CAPACITY = 4;
-const BARRACKS_CAPACITY = 4;
-const SPAWN_INTERVAL_MS = 30_000;
-
 function getBuildingIcon(type: string): string {
   switch (type) {
-    case "house":
+    case BUILDING_TYPES.HOUSE:
       return "🏠";
-    case "workshop":
+    case BUILDING_TYPES.WORKSHOP:
       return "🏭";
-    case "barracks":
+    case BUILDING_TYPES.BARRACKS:
       return "⚔️";
-    case "base_central":
+    case BUILDING_TYPES.CENTRAL_BASE:
       return "👑";
-    case "wall":
+    case BUILDING_TYPES.WALL:
       return "🧱";
-    case "turret":
+    case BUILDING_TYPES.TURRET:
       return "🔫";
     default:
       return "🏢";
@@ -41,13 +43,13 @@ function getBuildingIcon(type: string): string {
 
 function getBuildingCapacity(type: string): number {
   switch (type) {
-    case "house":
+    case BUILDING_TYPES.HOUSE:
       return HOUSE_CAPACITY;
-    case "workshop":
+    case BUILDING_TYPES.WORKSHOP:
       return FACTORY_CAPACITY;
-    case "barracks":
+    case BUILDING_TYPES.BARRACKS:
       return BARRACKS_CAPACITY;
-    case "base_central":
+    case BUILDING_TYPES.CENTRAL_BASE:
       return 0;
     default:
       return 0;
@@ -101,7 +103,8 @@ export function BuildingsRenderer({
         const nextSpawnAt = lastSpawn + SPAWN_INTERVAL_MS;
         const timeToSpawn = Math.max(0, Math.ceil((nextSpawnAt - now) / 1000));
         const showSpawnTimer =
-          (b.type === "house" || b.type === "barracks") &&
+          (b.type === BUILDING_TYPES.HOUSE ||
+            b.type === BUILDING_TYPES.BARRACKS) &&
           stat.total < capacity;
 
         // Building center position
@@ -110,8 +113,8 @@ export function BuildingsRenderer({
 
         // Visuals based on type
         let color = "blue";
-        if (b.type === "wall") color = "#57534e"; // Stone gray
-        if (b.type === "turret") color = "#374151"; // Dark gray base
+        if (b.type === BUILDING_TYPES.WALL) color = "#57534e"; // Stone gray
+        if (b.type === BUILDING_TYPES.TURRET) color = "#374151"; // Dark gray base
         if (isUnderConstruction) color = "orange";
 
         return (
@@ -161,7 +164,7 @@ export function BuildingsRenderer({
                     anchorX="left"
                     anchorY="bottom"
                     color={
-                      (b.type === "workshop"
+                      (b.type === BUILDING_TYPES.WORKSHOP
                         ? stat.assigned || 0
                         : stat.total) >= capacity
                         ? "#ef4444"
@@ -170,7 +173,7 @@ export function BuildingsRenderer({
                     fontSize={0.8}
                     position={[centerX + 1.3, centerY + 0.8, 2.7]}
                   >
-                    {b.type === "workshop"
+                    {b.type === BUILDING_TYPES.WORKSHOP
                       ? `${stat.assigned || 0}/${capacity}`
                       : `${stat.total}/${capacity}`}
                   </Text>
@@ -190,13 +193,14 @@ export function BuildingsRenderer({
                 )}
 
                 {/* Bottom-Left: Inside Count */}
-                {(b.type === "house" || b.type === "workshop") && (
+                {(b.type === BUILDING_TYPES.HOUSE ||
+                  b.type === BUILDING_TYPES.WORKSHOP) && (
                   <Text
                     anchorX="right"
                     anchorY="top"
                     color={
                       (
-                        b.type === "workshop"
+                        b.type === BUILDING_TYPES.WORKSHOP
                           ? stat.working > 0
                           : stat.sleeping > 0
                       )
@@ -206,7 +210,7 @@ export function BuildingsRenderer({
                     fontSize={0.6}
                     position={[centerX - 1.3, centerY - 0.8, 2.7]}
                   >
-                    {b.type === "workshop"
+                    {b.type === BUILDING_TYPES.WORKSHOP
                       ? `⚙${stat.working}`
                       : `💤${stat.sleeping}`}
                   </Text>
@@ -224,7 +228,8 @@ export function BuildingsRenderer({
                 </mesh>
                 {/* Progress (5s for buildings, 30s for bases) */}
                 {(() => {
-                  const captureTime = b.type === "base_central" ? 30_000 : 5000;
+                  const captureTime =
+                    b.type === BUILDING_TYPES.CENTRAL_BASE ? 30_000 : 5000;
                   const progress = Math.min(
                     (Date.now() - b.captureStart) / captureTime,
                     1

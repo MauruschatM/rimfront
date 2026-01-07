@@ -1,7 +1,12 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalMutation, mutation, query } from "./_generated/server";
-import { BASE_SIZE, BUILDINGS, TICK_INTERVAL_MS } from "./lib/constants";
+import {
+  BASE_SIZE,
+  BUILDING_TYPES,
+  BUILDINGS,
+  TICK_INTERVAL_MS,
+} from "./lib/constants";
 import { calculateBuildingCost } from "./lib/economy";
 import {
   findRandomBasePosition,
@@ -57,7 +62,10 @@ export const placeBase = mutation({
 
     // Remove existing base from this player (if any) to allow repositioning
     const buildingsWithoutMyBase = map.buildings.filter(
-      (b: any) => !(b.ownerId === player._id && b.type === "base_central")
+      (b: any) =>
+        !(
+          b.ownerId === player._id && b.type === BUILDING_TYPES.CENTRAL_BASE
+        )
     );
 
     validateBasePlacement(
@@ -74,7 +82,7 @@ export const placeBase = mutation({
     const newBuilding = {
       id: Math.random().toString(36).slice(2),
       ownerId: player._id,
-      type: "base_central",
+      type: BUILDING_TYPES.CENTRAL_BASE,
       x: args.x,
       y: args.y,
       width: BASE_SIZE,
@@ -263,7 +271,7 @@ export const endPlacementPhase = internalMutation({
         const newBuilding: Building = {
           id: Math.random().toString(36).slice(2),
           ownerId: player._id,
-          type: "base_central",
+          type: BUILDING_TYPES.CENTRAL_BASE,
           x: position.x,
           y: position.y,
           width: BASE_SIZE,

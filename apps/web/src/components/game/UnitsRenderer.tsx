@@ -1,3 +1,4 @@
+import { UNIT_TYPES } from "@packages/backend/convex/lib/constants";
 import { Line } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import { useCallback, useEffect, useMemo, useRef } from "react";
@@ -117,7 +118,7 @@ export function UnitsRenderer({
       if (!mesh) return;
       list.forEach((entity, i) => {
         const pos =
-          entity.type === "turret_gun"
+          entity.type === UNIT_TYPES.TURRET_GUN
             ? { x: entity.x, y: entity.y }
             : interpolation.getInterpolatedPosition(
                 entity._id,
@@ -125,19 +126,22 @@ export function UnitsRenderer({
                 entity.y
               );
 
-        let z = entity.type === "commander" ? 1 : 0.5;
-        if (entity.type === "turret_gun") z = 1.0;
+        let z = entity.type === UNIT_TYPES.COMMANDER ? 1 : 0.5;
+        if (entity.type === UNIT_TYPES.TURRET_GUN) z = 1.0;
 
         if (
           (entity.state === "moving" ||
             entity.state === "patrol" ||
             entity.path) &&
-          entity.type !== "turret_gun"
+          entity.type !== UNIT_TYPES.TURRET_GUN
         ) {
           z += Math.abs(Math.sin(state.clock.elapsedTime * 10)) * 0.2;
         }
 
-        if (entity.type === "turret_gun" && entity.attackTargetId) {
+        if (
+          entity.type === UNIT_TYPES.TURRET_GUN &&
+          entity.attackTargetId
+        ) {
           const target = entityMap
             ? entityMap.get(entity.attackTargetId)
             : entities.find((e) => e._id === entity.attackTargetId);
@@ -156,11 +160,11 @@ export function UnitsRenderer({
         }
 
         const scale =
-          entity.type === "commander"
+          entity.type === UNIT_TYPES.COMMANDER
             ? 0.8
-            : entity.type === "soldier"
+            : entity.type === UNIT_TYPES.SOLDIER
               ? 0.4
-              : entity.type === "turret_gun"
+              : entity.type === UNIT_TYPES.TURRET_GUN
                 ? 1.0
                 : 0.5;
 

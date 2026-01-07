@@ -2,6 +2,7 @@
 
 import { api } from "@packages/backend/convex/_generated/api";
 import type { Doc } from "@packages/backend/convex/_generated/dataModel";
+import { BUILDING_TYPES } from "@packages/backend/convex/lib/constants";
 import { Canvas } from "@react-three/fiber";
 import { useMutation } from "convex/react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
@@ -76,7 +77,8 @@ export function GameCanvas({
       myPlayerId
     ) {
       const myBase = buildings.find(
-        (b) => b.ownerId === myPlayerId && b.type === "base_central"
+        (b) =>
+          b.ownerId === myPlayerId && b.type === BUILDING_TYPES.CENTRAL_BASE
       );
       if (myBase) {
         const cx = myBase.x + myBase.width / 2;
@@ -117,7 +119,7 @@ export function GameCanvas({
 
       if (
         clickedBuilding &&
-        clickedBuilding.type === "base_central" &&
+        clickedBuilding.type === BUILDING_TYPES.CENTRAL_BASE &&
         clickedBuilding.ownerId !== myPlayerId
       ) {
         setDiplomacyTargetId(clickedBuilding.ownerId);

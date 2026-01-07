@@ -508,6 +508,18 @@ export const leaveLobby = mutation({
       return;
     }
 
+    // Sentinel Security: IDOR protection
+    // Verify that the authenticated user owns this player record
+    if (player.userId) {
+      const user = await authComponent.safeGetAuthUser(ctx);
+      if (!user || user._id !== player.userId) {
+        throw new Error("Unauthorized: You do not own this player");
+      }
+    } else {
+      // It's a bot (no userId). Public users should not be able to control bots.
+      throw new Error("Cannot control bot players");
+    }
+
     if (player.gameId !== args.gameId) {
       throw new Error("Player is not in this game");
     }
@@ -544,6 +556,18 @@ export const forceStartLobby = mutation({
     const player = await ctx.db.get(args.playerId);
     if (!player) {
       throw new Error("Player not found");
+    }
+
+    // Sentinel Security: IDOR protection
+    // Verify that the authenticated user owns this player record
+    if (player.userId) {
+      const user = await authComponent.safeGetAuthUser(ctx);
+      if (!user || user._id !== player.userId) {
+        throw new Error("Unauthorized: You do not own this player");
+      }
+    } else {
+      // It's a bot (no userId). Public users should not be able to control bots.
+      throw new Error("Cannot control bot players");
     }
 
     if (player.gameId !== args.gameId) {

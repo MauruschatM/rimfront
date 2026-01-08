@@ -508,6 +508,12 @@ export const leaveLobby = mutation({
       return;
     }
 
+    // Sentinel Security: Prevent IDOR - only allow users to remove themselves
+    const user = await authComponent.safeGetAuthUser(ctx);
+    if (!user || player.userId !== user._id) {
+      throw new Error("Unauthorized: You can only remove yourself");
+    }
+
     if (player.gameId !== args.gameId) {
       throw new Error("Player is not in this game");
     }
@@ -544,6 +550,12 @@ export const forceStartLobby = mutation({
     const player = await ctx.db.get(args.playerId);
     if (!player) {
       throw new Error("Player not found");
+    }
+
+    // Sentinel Security: Prevent IDOR
+    const user = await authComponent.safeGetAuthUser(ctx);
+    if (!user || player.userId !== user._id) {
+      throw new Error("Unauthorized");
     }
 
     if (player.gameId !== args.gameId) {

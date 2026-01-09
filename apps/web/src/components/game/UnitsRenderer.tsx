@@ -113,17 +113,25 @@ export function UnitsRenderer({
   const tempObj = useMemo(() => new THREE.Object3D(), []);
 
   useFrame((state) => {
+    const now = Date.now(); // ⚡ Bolt Optimization: Calculate time once per frame
+
     const updateMesh = (mesh: THREE.InstancedMesh | null, list: Entity[]) => {
       if (!mesh) return;
       list.forEach((entity, i) => {
-        const pos =
-          entity.type === "turret_gun"
-            ? { x: entity.x, y: entity.y }
-            : interpolation.getInterpolatedPosition(
-                entity._id,
-                entity.x,
-                entity.y
-              );
+        // ⚡ Bolt Optimization: Avoid object allocation for position
+        let x = entity.x;
+        let y = entity.y;
+
+        if (entity.type !== "turret_gun") {
+          const pos = interpolation.getInterpolatedPosition(
+            entity._id,
+            entity.x,
+            entity.y,
+            now
+          );
+          x = pos.x;
+          y = pos.y;
+        }
 
         let z = entity.type === "commander" ? 1 : 0.5;
         if (entity.type === "turret_gun") z = 1.0;
@@ -146,9 +154,10 @@ export function UnitsRenderer({
             const tPos = interpolation.getInterpolatedPosition(
               target._id,
               target.x,
-              target.y
+              target.y,
+              now
             );
-            const angle = Math.atan2(tPos.y - pos.y, tPos.x - pos.x);
+            const angle = Math.atan2(tPos.y - y, tPos.x - x);
             tempObj.rotation.z = angle;
           }
         } else {
@@ -164,7 +173,7 @@ export function UnitsRenderer({
                 ? 1.0
                 : 0.5;
 
-        tempObj.position.set(pos.x, pos.y, z);
+        tempObj.position.set(x, y, z);
         tempObj.scale.set(scale, scale, scale);
         tempObj.updateMatrix();
         mesh.setMatrixAt(i, tempObj.matrix);

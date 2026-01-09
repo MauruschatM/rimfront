@@ -120,14 +120,15 @@ export function UserProfile({ user }: UserProfileProps) {
 
       <div className="flex w-full gap-4 pt-4">
         {/* Play Button - Placeholder for now */}
-        <Button
-          aria-disabled="true"
-          className="pixel-corners h-12 flex-1 rounded-none bg-green-600 font-sans text-lg text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
-          disabled
-          title="Coming Soon"
-        >
-          ENTER WORLD
-        </Button>
+        <div className="flex-1 cursor-not-allowed" title="Coming Soon">
+          <Button
+            aria-disabled="true"
+            className="pixel-corners h-12 w-full rounded-none bg-green-600 font-sans text-lg text-white hover:bg-green-700 disabled:pointer-events-none disabled:opacity-50"
+            disabled
+          >
+            ENTER WORLD
+          </Button>
+        </div>
       </div>
 
       <div className="w-full">

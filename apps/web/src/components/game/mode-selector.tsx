@@ -166,7 +166,7 @@ export function ModeSelector({ user }: ModeSelectorProps) {
   const timeDisplay = formatTime(displayTimeLeft);
 
   return (
-    <div ref={containerRef} className="z-50 flex flex-col items-center">
+    <div className="z-50 flex flex-col items-center" ref={containerRef}>
       {/* Top Play Button */}
       <div className="relative">
         <Button
@@ -200,9 +200,9 @@ export function ModeSelector({ user }: ModeSelectorProps) {
       {/* Dropdown Menu */}
       {isOpen && status === "idle" && (
         <div
-          role="dialog"
           aria-label="Game Mode Selection"
           className="pixel-corners fade-in slide-in-from-top-4 absolute top-20 flex w-[800px] animate-in flex-col gap-6 border-2 border-muted bg-background/95 p-4 shadow-2xl backdrop-blur-sm"
+          role="dialog"
         >
           {/* Tabs */}
           <div className="flex gap-4 border-muted border-b-2 pb-2">
@@ -218,21 +218,25 @@ export function ModeSelector({ user }: ModeSelectorProps) {
             >
               Multiplayer
             </button>
-            <button
-              aria-disabled="true"
-              aria-label="Private mode is currently locked"
-              className={cn(
-                "flex items-center gap-2 px-4 py-2 font-mono text-sm uppercase transition-colors",
-                activeTab === "private"
-                  ? "-mb-2.5 border-primary border-b-2 text-primary"
-                  : "cursor-not-allowed text-muted-foreground/50"
-              )}
-              disabled
+            <span
+              className="cursor-not-allowed"
               title="Private mode is coming soon"
-              type="button"
             >
-              Private <Lock className="h-3 w-3" />
-            </button>
+              <button
+                aria-disabled="true"
+                aria-label="Private mode is currently locked"
+                className={cn(
+                  "flex items-center gap-2 px-4 py-2 font-mono text-sm uppercase transition-colors disabled:pointer-events-none",
+                  activeTab === "private"
+                    ? "-mb-2.5 border-primary border-b-2 text-primary"
+                    : "text-muted-foreground/50"
+                )}
+                disabled
+                type="button"
+              >
+                Private <Lock className="h-3 w-3" />
+              </button>
+            </span>
           </div>
 
           {/* Mode Selection */}

@@ -121,9 +121,9 @@ export function VictoryDefeatOverlay({
         <h3 className="mb-4 border-white/20 border-b pb-2 font-mono text-white text-xl">
           FINAL STANDINGS
         </h3>
-        <div className="flex flex-col gap-2">
+        <ol aria-label="Final Standings" className="flex flex-col gap-2">
           {sortedPlayers.map((p, i) => (
-            <div
+            <li
               className={cn(
                 "flex items-center justify-between p-2 font-mono transition-all",
                 p._id === myPlayerId
@@ -146,13 +146,13 @@ export function VictoryDefeatOverlay({
                 {i === 0 && <span className="text-lg">👑</span>}
               </div>
               <span className="font-bold">{p.score.toLocaleString()}</span>
-            </div>
+            </li>
           ))}
-        </div>
+        </ol>
       </div>
 
       {/* Countdown */}
-      <div className="mt-8 text-center">
+      <div aria-live="polite" className="mt-8 text-center">
         <p className="font-mono text-muted-foreground text-sm">
           Returning to lobby in
         </p>

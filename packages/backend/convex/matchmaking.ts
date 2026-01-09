@@ -503,9 +503,21 @@ export const leaveLobby = mutation({
     playerId: v.id("players"),
   },
   handler: async (ctx, args) => {
+    const user = await authComponent.safeGetAuthUser(ctx);
     const player = await ctx.db.get(args.playerId);
     if (!player) {
       return;
+    }
+
+    // Sentinel Security: IDOR Protection
+    // Ensure the request comes from the user who owns this player record
+    if (player.userId) {
+      if (!user || user._id !== player.userId) {
+        throw new Error("Unauthorized: You do not own this player slot.");
+      }
+    } else {
+      // Bot player - users shouldn't be able to manually "leave" for a bot
+      throw new Error("Unauthorized: Cannot manage bot players.");
     }
 
     if (player.gameId !== args.gameId) {
@@ -541,9 +553,19 @@ export const forceStartLobby = mutation({
   },
   returns: v.object({ success: v.boolean() }),
   handler: async (ctx, args) => {
+    const user = await authComponent.safeGetAuthUser(ctx);
     const player = await ctx.db.get(args.playerId);
     if (!player) {
       throw new Error("Player not found");
+    }
+
+    // Sentinel Security: IDOR Protection
+    if (player.userId) {
+      if (!user || user._id !== player.userId) {
+        throw new Error("Unauthorized: You do not own this player slot.");
+      }
+    } else {
+      throw new Error("Unauthorized: Cannot manage bot players.");
     }
 
     if (player.gameId !== args.gameId) {

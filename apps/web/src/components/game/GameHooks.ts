@@ -28,6 +28,7 @@ export function useInterpolatedUnits(
   useEffect(() => {
     const now = Date.now();
     entities.forEach((e) => {
+      // Start from current visual position to avoid jumps
       const currentPos = interpolatedRef.current[e._id] || { x: e.x, y: e.y };
 
       prevEntitiesRef.current[e._id] = {
@@ -60,23 +61,38 @@ export function useInterpolatedUnits(
   }, [entities, entityMap]);
 
   return {
-    getInterpolatedPosition: (id: string, targetX: number, targetY: number) => {
-      const start = prevEntitiesRef.current[id];
-      if (!start) return { x: targetX, y: targetY };
+    // ⚡ Bolt Optimization: Accept time to avoid Date.now() in loop and return reference to reduce GC
+    getInterpolatedPosition: (
+      id: string,
+      targetX: number,
+      targetY: number,
+      time?: number
+    ) => {
+      // Ensure we have a reusable object
+      if (!interpolatedRef.current[id]) {
+        interpolatedRef.current[id] = { x: targetX, y: targetY };
+      }
+      const result = interpolatedRef.current[id];
 
-      const now = Date.now();
+      const start = prevEntitiesRef.current[id];
+      if (!start) {
+        // If no history, snap to target
+        result.x = targetX;
+        result.y = targetY;
+        return result;
+      }
+
+      const now = time ?? Date.now();
       const elapsed = now - start.time;
-      const duration = 100;
+      const duration = 100; // Hardcoded 100ms interpolation
 
       const t = Math.min(elapsed / duration, 1);
-      const alpha = t * (2 - t);
+      const alpha = t * (2 - t); // Ease out quad
 
-      const x = start.x + (targetX - start.x) * alpha;
-      const y = start.y + (targetY - start.y) * alpha;
+      result.x = start.x + (targetX - start.x) * alpha;
+      result.y = start.y + (targetY - start.y) * alpha;
 
-      interpolatedRef.current[id] = { x, y };
-
-      return { x, y };
+      return result;
     },
   };
 }

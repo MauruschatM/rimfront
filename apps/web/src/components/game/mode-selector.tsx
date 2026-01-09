@@ -166,7 +166,7 @@ export function ModeSelector({ user }: ModeSelectorProps) {
   const timeDisplay = formatTime(displayTimeLeft);
 
   return (
-    <div ref={containerRef} className="z-50 flex flex-col items-center">
+    <div className="z-50 flex flex-col items-center" ref={containerRef}>
       {/* Top Play Button */}
       <div className="relative">
         <Button
@@ -200,9 +200,9 @@ export function ModeSelector({ user }: ModeSelectorProps) {
       {/* Dropdown Menu */}
       {isOpen && status === "idle" && (
         <div
-          role="dialog"
           aria-label="Game Mode Selection"
           className="pixel-corners fade-in slide-in-from-top-4 absolute top-20 flex w-[800px] animate-in flex-col gap-6 border-2 border-muted bg-background/95 p-4 shadow-2xl backdrop-blur-sm"
+          role="dialog"
         >
           {/* Tabs */}
           <div className="flex gap-4 border-muted border-b-2 pb-2">

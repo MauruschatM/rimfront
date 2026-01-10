@@ -109,7 +109,8 @@ export function VictoryDefeatOverlay({
       </div>
 
       {/* Leaderboard with slide-in animation */}
-      <div
+      <section
+        aria-label="Final Standings"
         className={cn(
           "pixel-corners w-full max-w-lg border-2 bg-black/80 p-6 transition-all duration-700",
           isWinner ? "border-yellow-400/50" : "border-red-500/50",
@@ -121,38 +122,52 @@ export function VictoryDefeatOverlay({
         <h3 className="mb-4 border-white/20 border-b pb-2 font-mono text-white text-xl">
           FINAL STANDINGS
         </h3>
-        <div className="flex flex-col gap-2">
-          {sortedPlayers.map((p, i) => (
-            <div
-              className={cn(
-                "flex items-center justify-between p-2 font-mono transition-all",
-                p._id === myPlayerId
-                  ? isWinner
-                    ? "bg-yellow-500/20 text-yellow-400"
-                    : "bg-red-500/20 text-red-400"
-                  : "text-white"
-              )}
-              key={p._id}
-              style={{
-                animationDelay: `${i * 0.1}s`,
-              }}
-            >
-              <div className="flex items-center gap-4">
-                <span className="w-6 text-muted-foreground">#{i + 1}</span>
-                <span>{p.name || "Unknown"}</span>
-                {p.status === "eliminated" && (
-                  <span className="text-red-500 text-xs">(ELIMINATED)</span>
+        <ol className="flex flex-col gap-2">
+          {sortedPlayers.map((p, i) => {
+            let playerStyles = "text-white";
+            if (p._id === myPlayerId) {
+              playerStyles = isWinner
+                ? "bg-yellow-500/20 text-yellow-400"
+                : "bg-red-500/20 text-red-400";
+            }
+
+            return (
+              <li
+                className={cn(
+                  "flex items-center justify-between p-2 font-mono transition-all",
+                  playerStyles
                 )}
-                {i === 0 && <span className="text-lg">👑</span>}
-              </div>
-              <span className="font-bold">{p.score.toLocaleString()}</span>
-            </div>
-          ))}
-        </div>
-      </div>
+                key={p._id}
+                style={{
+                  animationDelay: `${i * 0.1}s`,
+                }}
+              >
+                <div className="flex items-center gap-4">
+                  <span
+                    aria-hidden="true"
+                    className="w-6 text-muted-foreground"
+                  >
+                    #{i + 1}
+                  </span>
+                  <span className="sr-only">Rank {i + 1}</span>
+                  <span>{p.name || "Unknown"}</span>
+                  {p.status === "eliminated" && (
+                    <span className="text-red-500 text-xs">(ELIMINATED)</span>
+                  )}
+                  {i === 0 && <span className="text-lg">👑</span>}
+                </div>
+                <span className="font-bold">
+                  <span className="sr-only">Score: </span>
+                  {p.score.toLocaleString()}
+                </span>
+              </li>
+            );
+          })}
+        </ol>
+      </section>
 
       {/* Countdown */}
-      <div className="mt-8 text-center">
+      <div aria-atomic="true" aria-live="polite" className="mt-8 text-center">
         <p className="font-mono text-muted-foreground text-sm">
           Returning to lobby in
         </p>
@@ -162,6 +177,7 @@ export function VictoryDefeatOverlay({
             isWinner ? "text-yellow-400" : "text-red-400"
           )}
         >
+          <span className="sr-only">seconds: </span>
           {countdown}
         </p>
       </div>

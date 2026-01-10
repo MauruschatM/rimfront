@@ -1,19 +1,8 @@
 import { Text } from "@react-three/drei";
-import { useEffect, useState } from "react";
-
-interface Building {
-  id: string;
-  ownerId: string;
-  type: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  health: number;
-  constructionEnd?: number;
-  captureStart?: number;
-  capturingOwnerId?: string;
-}
+import { useFrame } from "@react-three/fiber";
+import { useEffect, useRef, useState } from "react";
+import type { Mesh } from "three";
+import type { Building, BuildingStats } from "./types";
 
 const FACTORY_CAPACITY = 16;
 const HOUSE_CAPACITY = 4;
@@ -54,203 +43,280 @@ function getBuildingCapacity(type: string): number {
   }
 }
 
+function SpawnTimer({
+  lastSpawnTime,
+  position,
+}: {
+  lastSpawnTime: number;
+  position: [number, number, number];
+}) {
+  const [timeLeft, setTimeLeft] = useState(0);
+
+  useEffect(() => {
+    const update = () => {
+      const now = Date.now();
+      const nextSpawnAt = lastSpawnTime + SPAWN_INTERVAL_MS;
+      const t = Math.max(0, Math.ceil((nextSpawnAt - now) / 1000));
+      setTimeLeft(t);
+    };
+    update();
+    const timer = setInterval(update, 1000);
+    return () => clearInterval(timer);
+  }, [lastSpawnTime]);
+
+  if (timeLeft <= 0) {
+    return (
+      <Text
+        anchorX="left"
+        anchorY="top"
+        color="#94a3b8"
+        fontSize={0.6}
+        position={position}
+      >
+        0s
+      </Text>
+    );
+  }
+
+  return (
+    <Text
+      anchorX="left"
+      anchorY="top"
+      color="#94a3b8"
+      fontSize={0.6}
+      position={position}
+    >
+      {timeLeft}s
+    </Text>
+  );
+}
+
+function CaptureBar({
+  captureStart,
+  type,
+  position,
+}: {
+  captureStart: number;
+  type: string;
+  position: [number, number, number];
+}) {
+  const barRef = useRef<Mesh>(null);
+  const captureTime = type === "base_central" ? 30_000 : 5000;
+
+  useFrame(() => {
+    if (barRef.current) {
+      const progress = Math.min((Date.now() - captureStart) / captureTime, 1);
+      const targetWidth = progress * 3;
+      barRef.current.scale.x = targetWidth;
+      barRef.current.position.x = -1.5 + targetWidth / 2;
+    }
+  });
+
+  return (
+    <group position={position}>
+      <mesh position={[0, 0, 0]}>
+        <planeGeometry args={[3, 0.4]} />
+        <meshBasicMaterial color="black" />
+      </mesh>
+      <mesh position={[-1.5, 0, 0.1]} ref={barRef}>
+        <planeGeometry args={[1, 0.3]} />
+        <meshBasicMaterial color="red" />
+      </mesh>
+      <Text
+        anchorX="center"
+        anchorY="bottom"
+        color="red"
+        fontSize={0.4}
+        position={[0, 0.4, 0.1]}
+      >
+        CAPTURE
+      </Text>
+    </group>
+  );
+}
+
+function BuildingMesh({
+  building,
+  isUnderConstruction,
+  centerX,
+  centerY,
+}: {
+  building: Building;
+  isUnderConstruction: boolean;
+  centerX: number;
+  centerY: number;
+}) {
+  let color = "blue";
+  if (isUnderConstruction) {
+    color = "orange";
+  } else if (building.type === "wall") {
+    color = "#57534e"; // Stone gray
+  } else if (building.type === "turret") {
+    color = "#374151"; // Dark gray base
+  }
+
+  return (
+    <>
+      <mesh position={[centerX, centerY, 0.2]}>
+        <planeGeometry args={[building.width, building.height]} />
+        <meshStandardMaterial color={color} wireframe={!!isUnderConstruction} />
+      </mesh>
+      {isUnderConstruction && (
+        <mesh position={[centerX, centerY, 1.5]}>
+          <planeGeometry args={[building.width * 0.8, building.height * 0.8]} />
+          <meshBasicMaterial color="yellow" opacity={0.5} transparent />
+        </mesh>
+      )}
+    </>
+  );
+}
+
+function BuildingInfo({
+  building,
+  stat,
+  capacity,
+  icon,
+  centerX,
+  centerY,
+}: {
+  building: Building;
+  stat: BuildingStats;
+  capacity: number;
+  icon: string;
+  centerX: number;
+  centerY: number;
+}) {
+  const showSpawnTimer =
+    (building.type === "house" || building.type === "barracks") &&
+    stat.total < capacity;
+
+  // Calculate Capacity Color and Text
+  const currentCount =
+    building.type === "workshop" ? stat.assigned || 0 : stat.total;
+  const isFull = currentCount >= capacity;
+  const capacityColor = isFull ? "#ef4444" : "#4ade80";
+  const capacityText = `${currentCount}/${capacity}`;
+
+  // Calculate Inside Count Color and Text
+  const insideCount =
+    building.type === "workshop" ? stat.working : stat.sleeping;
+  const hasInside = insideCount > 0;
+  const insideColor = hasInside ? "#fbbf24" : "#60a5fa";
+  const insideText =
+    building.type === "workshop" ? `⚙${insideCount}` : `💤${insideCount}`;
+  const showInsideCount =
+    building.type === "house" || building.type === "workshop";
+
+  return (
+    <>
+      <mesh position={[centerX, centerY, 2.5]}>
+        <circleGeometry args={[1.2, 32]} />
+        <meshBasicMaterial color="#1a1a2e" opacity={0.9} transparent />
+      </mesh>
+      <Text
+        anchorX="center"
+        anchorY="middle"
+        fontSize={1.5}
+        position={[centerX, centerY, 2.6]}
+      >
+        {icon}
+      </Text>
+
+      {capacity > 0 && (
+        <Text
+          anchorX="left"
+          anchorY="bottom"
+          color={capacityColor}
+          fontSize={0.8}
+          position={[centerX + 1.3, centerY + 0.8, 2.7]}
+        >
+          {capacityText}
+        </Text>
+      )}
+
+      {showSpawnTimer && (
+        <SpawnTimer
+          lastSpawnTime={stat.lastSpawnTime || 0}
+          position={[centerX + 1.3, centerY - 0.8, 2.7]}
+        />
+      )}
+
+      {showInsideCount && (
+        <Text
+          anchorX="right"
+          anchorY="top"
+          color={insideColor}
+          fontSize={0.6}
+          position={[centerX - 1.3, centerY - 0.8, 2.7]}
+        >
+          {insideText}
+        </Text>
+      )}
+    </>
+  );
+}
+
+function BuildingItem({
+  building,
+  stats,
+}: {
+  building: Building;
+  stats: Record<string, BuildingStats>;
+}) {
+  const isUnderConstruction = (building.constructionEnd ?? 0) > Date.now();
+  const stat = stats[building.id] || {
+    active: 0,
+    working: 0,
+    sleeping: 0,
+    total: 0,
+    assigned: 0,
+  };
+  const capacity = getBuildingCapacity(building.type);
+  const icon = getBuildingIcon(building.type);
+  const centerX = building.x + building.width / 2 - 0.5;
+  const centerY = building.y + building.height / 2 - 0.5;
+
+  return (
+    <group>
+      <BuildingMesh
+        building={building}
+        centerX={centerX}
+        centerY={centerY}
+        isUnderConstruction={isUnderConstruction}
+      />
+      {!isUnderConstruction && (
+        <BuildingInfo
+          building={building}
+          capacity={capacity}
+          centerX={centerX}
+          centerY={centerY}
+          icon={icon}
+          stat={stat}
+        />
+      )}
+      {building.captureStart && (
+        <CaptureBar
+          captureStart={building.captureStart}
+          position={[centerX, building.y + building.height + 1.5, 3]}
+          type={building.type}
+        />
+      )}
+    </group>
+  );
+}
+
 export function BuildingsRenderer({
   buildings,
   stats,
 }: {
   buildings: Building[];
-  stats: Record<
-    string,
-    {
-      active: number;
-      working: number;
-      sleeping: number;
-      total: number;
-      assigned?: number;
-      lastSpawnTime?: number;
-    }
-  >;
+  stats: Record<string, BuildingStats>;
 }) {
-  const [, setTick] = useState(0);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setTick((t) => t + 1);
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
-
   return (
     <group>
-      {buildings.map((b) => {
-        const isUnderConstruction =
-          b.constructionEnd && b.constructionEnd > Date.now();
-        const stat = stats[b.id] || {
-          active: 0,
-          working: 0,
-          sleeping: 0,
-          total: 0,
-          assigned: 0,
-        };
-        const capacity = getBuildingCapacity(b.type);
-        const icon = getBuildingIcon(b.type);
-
-        // Calculate spawn timer
-        const now = Date.now();
-        const lastSpawn = stat.lastSpawnTime || 0;
-        const nextSpawnAt = lastSpawn + SPAWN_INTERVAL_MS;
-        const timeToSpawn = Math.max(0, Math.ceil((nextSpawnAt - now) / 1000));
-        const showSpawnTimer =
-          (b.type === "house" || b.type === "barracks") &&
-          stat.total < capacity;
-
-        // Building center position
-        const centerX = b.x + b.width / 2 - 0.5;
-        const centerY = b.y + b.height / 2 - 0.5;
-
-        // Visuals based on type
-        let color = "blue";
-        if (b.type === "wall") color = "#57534e"; // Stone gray
-        if (b.type === "turret") color = "#374151"; // Dark gray base
-        if (isUnderConstruction) color = "orange";
-
-        return (
-          <group key={b.id}>
-            {/* Building mesh */}
-            <mesh position={[centerX, centerY, 0.2]}>
-              <planeGeometry args={[b.width, b.height]} />
-              <meshStandardMaterial
-                color={color}
-                wireframe={!!isUnderConstruction}
-              />
-            </mesh>
-
-            {/* Construction overlay */}
-            {isUnderConstruction && (
-              <mesh position={[centerX, centerY, 1.5]}>
-                <planeGeometry args={[b.width * 0.8, b.height * 0.8]} />
-                <meshBasicMaterial color="yellow" opacity={0.5} transparent />
-              </mesh>
-            )}
-
-            {/* Building Icon (centered) */}
-            {!isUnderConstruction && (
-              <>
-                {/* Icon circle background */}
-                <mesh position={[centerX, centerY, 2.5]}>
-                  <circleGeometry args={[1.2, 32]} />
-                  <meshBasicMaterial
-                    color="#1a1a2e"
-                    opacity={0.9}
-                    transparent
-                  />
-                </mesh>
-                {/* Icon text */}
-                <Text
-                  anchorX="center"
-                  anchorY="middle"
-                  fontSize={1.5}
-                  position={[centerX, centerY, 2.6]}
-                >
-                  {icon}
-                </Text>
-
-                {/* Top-Right Info (Total/Capacity or Assigned/Capacity) */}
-                {capacity > 0 && (
-                  <Text
-                    anchorX="left"
-                    anchorY="bottom"
-                    color={
-                      (b.type === "workshop"
-                        ? stat.assigned || 0
-                        : stat.total) >= capacity
-                        ? "#ef4444"
-                        : "#4ade80"
-                    }
-                    fontSize={0.8}
-                    position={[centerX + 1.3, centerY + 0.8, 2.7]}
-                  >
-                    {b.type === "workshop"
-                      ? `${stat.assigned || 0}/${capacity}`
-                      : `${stat.total}/${capacity}`}
-                  </Text>
-                )}
-
-                {/* Bottom-Right: Spawn Timer */}
-                {showSpawnTimer && (
-                  <Text
-                    anchorX="left"
-                    anchorY="top"
-                    color="#94a3b8"
-                    fontSize={0.6}
-                    position={[centerX + 1.3, centerY - 0.8, 2.7]}
-                  >
-                    {timeToSpawn}s
-                  </Text>
-                )}
-
-                {/* Bottom-Left: Inside Count */}
-                {(b.type === "house" || b.type === "workshop") && (
-                  <Text
-                    anchorX="right"
-                    anchorY="top"
-                    color={
-                      (
-                        b.type === "workshop"
-                          ? stat.working > 0
-                          : stat.sleeping > 0
-                      )
-                        ? "#fbbf24"
-                        : "#60a5fa"
-                    }
-                    fontSize={0.6}
-                    position={[centerX - 1.3, centerY - 0.8, 2.7]}
-                  >
-                    {b.type === "workshop"
-                      ? `⚙${stat.working}`
-                      : `💤${stat.sleeping}`}
-                  </Text>
-                )}
-              </>
-            )}
-
-            {/* Capture Progress Bar */}
-            {b.captureStart && (
-              <group position={[centerX, b.y + b.height + 1.5, 3]}>
-                {/* Background */}
-                <mesh position={[0, 0, 0]}>
-                  <planeGeometry args={[3, 0.4]} />
-                  <meshBasicMaterial color="black" />
-                </mesh>
-                {/* Progress (5s for buildings, 30s for bases) */}
-                {(() => {
-                  const captureTime = b.type === "base_central" ? 30_000 : 5000;
-                  const progress = Math.min(
-                    (Date.now() - b.captureStart) / captureTime,
-                    1
-                  );
-                  return (
-                    <mesh position={[-1.5 + (progress * 3) / 2, 0, 0.1]}>
-                      <planeGeometry args={[progress * 3, 0.3]} />
-                      <meshBasicMaterial color="red" />
-                    </mesh>
-                  );
-                })()}
-                {/* "CAPTURE" label */}
-                <Text
-                  anchorX="center"
-                  anchorY="bottom"
-                  color="red"
-                  fontSize={0.4}
-                  position={[0, 0.4, 0.1]}
-                >
-                  CAPTURE
-                </Text>
-              </group>
-            )}
-          </group>
-        );
-      })}
+      {buildings.map((b) => (
+        <BuildingItem building={b} key={b.id} stats={stats} />
+      ))}
     </group>
   );
 }

@@ -508,6 +508,22 @@ export const leaveLobby = mutation({
       return;
     }
 
+    // Sentinel Security: IDOR protection
+    // Ensure the authenticated user owns this player record
+    const user = await authComponent.safeGetAuthUser(ctx);
+    if (player.isBot) {
+      // Bots cannot be manually kicked by players via this API
+      throw new Error("Cannot leave lobby for a bot");
+    }
+
+    // If the player record is associated with a user ID, strictly enforce ownership
+    // This assumes guests do not have a userId set, or if they do, they must be authenticated
+    if (player.userId) {
+      if (!user || player.userId !== user._id) {
+        throw new Error("Unauthorized: You can only remove your own player");
+      }
+    }
+
     if (player.gameId !== args.gameId) {
       throw new Error("Player is not in this game");
     }
@@ -544,6 +560,19 @@ export const forceStartLobby = mutation({
     const player = await ctx.db.get(args.playerId);
     if (!player) {
       throw new Error("Player not found");
+    }
+
+    // Sentinel Security: IDOR protection
+    // Ensure the authenticated user owns this player record
+    const user = await authComponent.safeGetAuthUser(ctx);
+    if (player.isBot) {
+      throw new Error("Cannot force start with a bot");
+    }
+
+    if (player.userId) {
+      if (!user || player.userId !== user._id) {
+        throw new Error("Unauthorized: You can only force start with your own player");
+      }
     }
 
     if (player.gameId !== args.gameId) {

@@ -3,6 +3,7 @@ import { processActiveEntities } from "./combat";
 import { TICKS_PER_ROUND } from "./constants";
 import {
   calculatePoweredBuildings,
+  cleanupDestroyedBuildings,
   handleCapture,
   transferOwnership,
 } from "./gameState";
@@ -109,36 +110,16 @@ export async function runGameTick(ctx: any, gameId: Id<"games">) {
   // 2.1 Destruction Logic (Cleanup destroyed buildings)
   // We filter out buildings with health <= 0
   // And delete associated entities (e.g. turret guns)
-  const survivors: Building[] = [];
-  const destroyedBuildingIds = new Set<string>();
-
-  for (const b of mapDoc.buildings) {
-    if (b.health !== undefined && b.health <= 0 && b.type !== "base_central") {
-      destroyedBuildingIds.add(b.id);
-    } else {
-      survivors.push(b);
-    }
-  }
-
-  if (destroyedBuildingIds.size > 0) {
-    // Cleanup associated entities
-    for (const id of destroyedBuildingIds) {
-      // Find entities linked to this building
-      const linkedEntities = entities.filter((e) => e.buildingId === id);
-      for (const e of linkedEntities) {
-        await ctx.db.delete(e._id);
-      }
-    }
-
-    // Update Map with survivors
-    mapDoc.buildings = survivors;
-    await ctx.db.patch(mapDoc._id, { buildings: survivors });
-  }
+  const {
+    survivors,
+    destroyedIds: destroyedBuildingIds,
+    mapSaved: mapSavedByDestruction,
+  } = await cleanupDestroyedBuildings(ctx, mapDoc, entities);
 
   // Save map if capture events occurred OR if health changed (we can't easily track health change dirty flag,
   // but we can check if we saved above. If destroyed, we saved.
   // If not destroyed but damaged? We need to save.
-  const mapSaved = destroyedBuildingIds.size > 0;
+  const mapSaved = mapSavedByDestruction;
 
   if (!mapSaved && captureEvents.length > 0) {
     await ctx.db.patch(mapDoc._id, { buildings: mapDoc.buildings });
@@ -340,30 +321,13 @@ export async function runGameTick(ctx: any, gameId: Id<"games">) {
 
   // Post-processing: Cleanup destroyed buildings (health <= 0)
   // Runs after damage logic
-  const finalSurvivors: Building[] = [];
-  const finalDestroyedIds = new Set<string>();
-  let buildingCountChanged = false;
+  const { mapSaved: finalMapSaved } = await cleanupDestroyedBuildings(
+    ctx,
+    mapDoc,
+    entities
+  );
 
-  for (const b of mapDoc.buildings) {
-    if (b.health !== undefined && b.health <= 0 && b.type !== "base_central") {
-      finalDestroyedIds.add(b.id);
-      buildingCountChanged = true;
-    } else {
-      finalSurvivors.push(b);
-    }
-  }
-
-  if (buildingCountChanged) {
-    // Cleanup entities linked to destroyed buildings
-    for (const id of finalDestroyedIds) {
-      const linked = entities.filter((e) => e.buildingId === id);
-      for (const e of linked) {
-        await ctx.db.delete(e._id);
-      }
-    }
-    // Save new building list (also saves any health changes for survivors if we use this list)
-    await ctx.db.patch(mapDoc._id, { buildings: finalSurvivors });
-  } else if (buildingsDamaged && !mapSaved) {
+  if (!finalMapSaved && buildingsDamaged && !mapSaved) {
     // If no building died but some were damaged (and not saved by capture/destruction earlier)
     // We need to save the health changes
     await ctx.db.patch(mapDoc._id, { buildings: mapDoc.buildings });

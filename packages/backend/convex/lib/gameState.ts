@@ -1,18 +1,69 @@
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
+import type { MutationCtx } from "../_generated/server";
 import type { SpatialHash } from "./spatial";
+import type { Building, Entity } from "./types";
 
-interface Building {
-  id: string;
-  ownerId: string;
-  type: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  health: number;
-  constructionEnd?: number;
-  captureStart?: number;
-  capturingOwnerId?: string;
+// --------------------------------------------------------------------------
+// DESTRUCTION LOGIC
+// --------------------------------------------------------------------------
+
+/**
+ * Handles the cleanup of destroyed buildings.
+ * - Identifies buildings with health <= 0
+ * - Deletes associated entities (e.g., turret guns) from the DB
+ * - Updates the map with the surviving buildings
+ *
+ * @param ctx Convex mutation context
+ * @param mapDoc The map document from the database
+ * @param entities All active entities in the game
+ * @returns {Promise<{ survivors: Building[], destroyedIds: Set<string>, mapSaved: boolean }>}
+ *          - survivors: The list of remaining buildings
+ *          - destroyedIds: Set of IDs of buildings that were destroyed
+ *          - mapSaved: Boolean indicating if the map was patched in the DB
+ */
+export async function cleanupDestroyedBuildings(
+  ctx: MutationCtx,
+  mapDoc: Doc<"maps">,
+  entities: Entity[]
+): Promise<{
+  survivors: Building[];
+  destroyedIds: Set<string>;
+  mapSaved: boolean;
+}> {
+  const survivors: Building[] = [];
+  const destroyedIds = new Set<string>();
+  let buildingCountChanged = false;
+
+  const buildings = mapDoc.buildings as Building[];
+
+  for (const b of buildings) {
+    if (b.health !== undefined && b.health <= 0 && b.type !== "base_central") {
+      destroyedIds.add(b.id);
+      buildingCountChanged = true;
+    } else {
+      survivors.push(b);
+    }
+  }
+
+  let mapSaved = false;
+
+  if (buildingCountChanged) {
+    // Cleanup entities linked to destroyed buildings
+    for (const id of destroyedIds) {
+      const linked = entities.filter((e) => e.buildingId === id);
+      for (const e of linked) {
+        await ctx.db.delete(e._id);
+      }
+    }
+
+    // Save new building list
+    // Update local object immediately as well (though it's a prop, we can't mutate it easily without a cast or re-assign)
+    // mapDoc.buildings = survivors; // This might be read-only in some generated types, but typically mutable in JS
+    await ctx.db.patch(mapDoc._id, { buildings: survivors });
+    mapSaved = true;
+  }
+
+  return { survivors, destroyedIds, mapSaved };
 }
 
 // --------------------------------------------------------------------------
@@ -201,7 +252,7 @@ export function handleCapture(
  * Transfers ownership of a building and all its associated units/groups.
  */
 export async function transferOwnership(
-  ctx: any,
+  ctx: MutationCtx,
   gameId: Id<"games">,
   buildingId: string,
   newOwnerId: Id<"players">
@@ -215,8 +266,8 @@ export async function transferOwnership(
   // 2. Transfer Family (House)
   const family = await ctx.db
     .query("families")
-    .withIndex("by_gameId", (q: any) => q.eq("gameId", gameId))
-    .filter((q: any) => q.eq(q.field("homeId"), buildingId))
+    .withIndex("by_gameId", (q) => q.eq("gameId", gameId))
+    .filter((q) => q.eq(q.field("homeId"), buildingId))
     .first();
 
   if (family) {
@@ -224,7 +275,7 @@ export async function transferOwnership(
     // Transfer all members
     const members = await ctx.db
       .query("entities")
-      .withIndex("by_familyId", (q: any) => q.eq("familyId", family._id))
+      .withIndex("by_familyId", (q) => q.eq("familyId", family._id))
       .collect();
     for (const m of members) {
       await ctx.db.patch(m._id, { ownerId: newOwnerId });
@@ -234,8 +285,8 @@ export async function transferOwnership(
   // 3. Transfer Troop (Barracks)
   const troop = await ctx.db
     .query("troops")
-    .withIndex("by_gameId", (q: any) => q.eq("gameId", gameId))
-    .filter((q: any) => q.eq(q.field("barracksId"), buildingId))
+    .withIndex("by_gameId", (q) => q.eq("gameId", gameId))
+    .filter((q) => q.eq(q.field("barracksId"), buildingId))
     .first();
 
   if (troop) {
@@ -243,7 +294,7 @@ export async function transferOwnership(
     // Transfer all soldiers
     const soldiers = await ctx.db
       .query("entities")
-      .withIndex("by_troopId", (q: any) => q.eq("troopId", troop._id))
+      .withIndex("by_troopId", (q) => q.eq("troopId", troop._id))
       .collect();
     for (const s of soldiers) {
       await ctx.db.patch(s._id, { ownerId: newOwnerId });

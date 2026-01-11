@@ -1,18 +1,54 @@
 import type { Id } from "../_generated/dataModel";
+import type { MutationCtx } from "../_generated/server";
 import type { SpatialHash } from "./spatial";
+import type { Building, Entity } from "./types";
 
-interface Building {
-  id: string;
-  ownerId: string;
-  type: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  health: number;
-  constructionEnd?: number;
-  captureStart?: number;
-  capturingOwnerId?: string;
+// --------------------------------------------------------------------------
+// DESTRUCTION LOGIC
+// --------------------------------------------------------------------------
+
+/**
+ * Removes destroyed buildings (health <= 0) and their linked entities.
+ * Updates the map document if changes occur.
+ *
+ * @param ctx Mutation Context
+ * @param mapDoc Map Document (must contain _id and buildings)
+ * @param entities List of all entities in the game (to find linked ones)
+ * @returns true if buildings were removed (and map saved), false otherwise
+ */
+export async function cleanupDestroyedBuildings(
+  ctx: MutationCtx,
+  mapDoc: { _id: Id<"maps">; buildings: Building[] },
+  entities: Entity[]
+): Promise<boolean> {
+  const survivors: Building[] = [];
+  const destroyedIds = new Set<string>();
+  let changed = false;
+
+  for (const b of mapDoc.buildings) {
+    if (b.health !== undefined && b.health <= 0 && b.type !== "base_central") {
+      destroyedIds.add(b.id);
+      changed = true;
+    } else {
+      survivors.push(b);
+    }
+  }
+
+  if (changed) {
+    // Cleanup entities linked to destroyed buildings
+    for (const id of destroyedIds) {
+      const linked = entities.filter((e) => e.buildingId === id);
+      for (const e of linked) {
+        await ctx.db.delete(e._id);
+      }
+    }
+    // Update mapDoc object reference
+    mapDoc.buildings = survivors;
+    // Persist changes
+    await ctx.db.patch(mapDoc._id, { buildings: survivors });
+    return true;
+  }
+  return false;
 }
 
 // --------------------------------------------------------------------------

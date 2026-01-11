@@ -503,6 +503,7 @@ export const leaveLobby = mutation({
     playerId: v.id("players"),
   },
   handler: async (ctx, args) => {
+    const user = await authComponent.safeGetAuthUser(ctx);
     const player = await ctx.db.get(args.playerId);
     if (!player) {
       return;
@@ -510,6 +511,16 @@ export const leaveLobby = mutation({
 
     if (player.gameId !== args.gameId) {
       throw new Error("Player is not in this game");
+    }
+
+    // Sentinel Security: Prevent unauthorized removal
+    if (player.userId) {
+      if (!user || user._id !== player.userId) {
+        throw new Error("Unauthorized: Cannot remove another player");
+      }
+    } else {
+      // Prevent kicking bots publicly to avoid griefing
+      throw new Error("Cannot kick bots");
     }
 
     const game = await ctx.db.get(args.gameId);
@@ -541,6 +552,7 @@ export const forceStartLobby = mutation({
   },
   returns: v.object({ success: v.boolean() }),
   handler: async (ctx, args) => {
+    const user = await authComponent.safeGetAuthUser(ctx);
     const player = await ctx.db.get(args.playerId);
     if (!player) {
       throw new Error("Player not found");
@@ -548,6 +560,15 @@ export const forceStartLobby = mutation({
 
     if (player.gameId !== args.gameId) {
       throw new Error("Player is not in this game");
+    }
+
+    // Sentinel Security: Prevent unauthorized force start
+    if (player.userId) {
+      if (!user || user._id !== player.userId) {
+        throw new Error("Unauthorized: Cannot force start for another player");
+      }
+    } else {
+      throw new Error("Bots cannot force start game");
     }
 
     const game = await ctx.db.get(args.gameId);
